@@ -47,7 +47,7 @@ class _ModelListPageState extends State<ModelListPage> {
     });
 
     // Simulate a download process
-    Timer(Duration(seconds: 5), () {
+    Timer(const Duration(seconds: 5), () {
       setState(() {
         model.status = 'Downloaded';
       });
@@ -86,29 +86,29 @@ class _ModelListPageState extends State<ModelListPage> {
                 if (model.status == 'Downloading')
                   ElevatedButton(
                     onPressed: () => _pauseDownload(model),
-                    child: Text('Pause'),
+                    child: const Text('Pause'),
                   ),
                 if (model.status == 'Paused')
                   ElevatedButton(
                     onPressed: () => _downloadModel(model),
-                    child: Text('Resume'),
+                    child: const Text('Resume'),
                   ),
                 if (model.status == 'Downloading' || model.status == 'Paused')
                   ElevatedButton(
                     onPressed: () => _cancelDownload(model),
-                    child: Text('Cancel'),
+                    child: const Text('Cancel'),
                   ),
                 if (model.status == 'Not Downloaded')
                   ElevatedButton(
                     onPressed: () => _downloadModel(model),
-                    child: Text('Download'),
+                    child: const Text('Download'),
                   ),
                 if (model.status == 'Downloaded')
                   ElevatedButton(
                     onPressed: () {
                       // Handle load for chat action
                     },
-                    child: Text('Load for Chat'),
+                    child: const Text('Load for Chat'),
                   ),
               ],
             ),
