@@ -151,10 +151,58 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "4:5529211751291579855",
+      "lastPropertyId": "7:298128361867075757",
+      "name": "DocumentChunkEntity",
+      "properties": [
+        {
+          "id": "1:8471084594895687728",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:2852245676123566137",
+          "name": "documentId",
+          "type": 9,
+          "flags": 2048,
+          "indexId": "2:1947557008907391377"
+        },
+        {
+          "id": "3:7210649499705760756",
+          "name": "chunkId",
+          "type": 9
+        },
+        {
+          "id": "4:8374523128468504279",
+          "name": "content",
+          "type": 9
+        },
+        {
+          "id": "5:197528022267655266",
+          "name": "chunkIndex",
+          "type": 6
+        },
+        {
+          "id": "6:1134649599479821458",
+          "name": "createdAtMs",
+          "type": 6
+        },
+        {
+          "id": "7:298128361867075757",
+          "name": "embedding",
+          "type": 28,
+          "flags": 8,
+          "indexId": "3:4624298418835270228"
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "3:1451929269734712640",
-  "lastIndexId": "1:2775013009232761216",
+  "lastEntityId": "4:5529211751291579855",
+  "lastIndexId": "3:4624298418835270228",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

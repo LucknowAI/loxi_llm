@@ -16,6 +16,7 @@ import 'package:objectbox_flutter_libs/objectbox_flutter_libs.dart';
 
 import 'features/chat/data/conversation_entity.dart';
 import 'features/chat/data/message_entity.dart';
+import 'features/documents/data/document_chunk_entity.dart';
 import 'features/models/data/model_entity.dart';
 
 export 'package:objectbox/objectbox.dart'; // so that callers only have to import this file
@@ -168,6 +169,55 @@ final _entities = <obx_int.ModelEntity>[
             flags: 0)
       ],
       relations: <obx_int.ModelRelation>[],
+      backlinks: <obx_int.ModelBacklink>[]),
+  obx_int.ModelEntity(
+      id: const obx_int.IdUid(4, 5529211751291579855),
+      name: 'DocumentChunkEntity',
+      lastPropertyId: const obx_int.IdUid(7, 298128361867075757),
+      flags: 0,
+      properties: <obx_int.ModelProperty>[
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(1, 8471084594895687728),
+            name: 'id',
+            type: 6,
+            flags: 1),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(2, 2852245676123566137),
+            name: 'documentId',
+            type: 9,
+            flags: 2048,
+            indexId: const obx_int.IdUid(2, 1947557008907391377)),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(3, 7210649499705760756),
+            name: 'chunkId',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(4, 8374523128468504279),
+            name: 'content',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(5, 197528022267655266),
+            name: 'chunkIndex',
+            type: 6,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(6, 1134649599479821458),
+            name: 'createdAtMs',
+            type: 6,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(7, 298128361867075757),
+            name: 'embedding',
+            type: 28,
+            flags: 8,
+            indexId: const obx_int.IdUid(3, 4624298418835270228),
+            hnswParams: obx_int.ModelHnswParams(
+              dimensions: 384,
+            ))
+      ],
+      relations: <obx_int.ModelRelation>[],
       backlinks: <obx_int.ModelBacklink>[])
 ];
 
@@ -206,8 +256,8 @@ Future<obx.Store> openStore(
 obx_int.ModelDefinition getObjectBoxModel() {
   final model = obx_int.ModelInfo(
       entities: _entities,
-      lastEntityId: const obx_int.IdUid(3, 1451929269734712640),
-      lastIndexId: const obx_int.IdUid(1, 2775013009232761216),
+      lastEntityId: const obx_int.IdUid(4, 5529211751291579855),
+      lastIndexId: const obx_int.IdUid(3, 4624298418835270228),
       lastRelationId: const obx_int.IdUid(0, 0),
       lastSequenceId: const obx_int.IdUid(0, 0),
       retiredEntityUids: const [],
@@ -371,6 +421,54 @@ obx_int.ModelDefinition getObjectBoxModel() {
                 const fb.Int64Reader().vTableGet(buffer, rootOffset, 14, 0);
 
           return object;
+        }),
+    DocumentChunkEntity: obx_int.EntityDefinition<DocumentChunkEntity>(
+        model: _entities[3],
+        toOneRelations: (DocumentChunkEntity object) => [],
+        toManyRelations: (DocumentChunkEntity object) => {},
+        getId: (DocumentChunkEntity object) => object.id,
+        setId: (DocumentChunkEntity object, int id) {
+          object.id = id;
+        },
+        objectToFB: (DocumentChunkEntity object, fb.Builder fbb) {
+          final documentIdOffset = fbb.writeString(object.documentId);
+          final chunkIdOffset = fbb.writeString(object.chunkId);
+          final contentOffset = fbb.writeString(object.content);
+          final embeddingOffset = object.embedding == null
+              ? null
+              : fbb.writeListFloat32(object.embedding!);
+          fbb.startTable(8);
+          fbb.addInt64(0, object.id);
+          fbb.addOffset(1, documentIdOffset);
+          fbb.addOffset(2, chunkIdOffset);
+          fbb.addOffset(3, contentOffset);
+          fbb.addInt64(4, object.chunkIndex);
+          fbb.addInt64(5, object.createdAtMs);
+          fbb.addOffset(6, embeddingOffset);
+          fbb.finish(fbb.endTable());
+          return object.id;
+        },
+        objectFromFB: (obx.Store store, ByteData fbData) {
+          final buffer = fb.BufferContext(fbData);
+          final rootOffset = buffer.derefObject(0);
+
+          final object = DocumentChunkEntity()
+            ..id = const fb.Int64Reader().vTableGet(buffer, rootOffset, 4, 0)
+            ..documentId = const fb.StringReader(asciiOptimization: true)
+                .vTableGet(buffer, rootOffset, 6, '')
+            ..chunkId = const fb.StringReader(asciiOptimization: true)
+                .vTableGet(buffer, rootOffset, 8, '')
+            ..content = const fb.StringReader(asciiOptimization: true)
+                .vTableGet(buffer, rootOffset, 10, '')
+            ..chunkIndex =
+                const fb.Int64Reader().vTableGet(buffer, rootOffset, 12, 0)
+            ..createdAtMs =
+                const fb.Int64Reader().vTableGet(buffer, rootOffset, 14, 0)
+            ..embedding =
+                const fb.ListReader<double>(fb.Float32Reader(), lazy: false)
+                    .vTableGetNullable(buffer, rootOffset, 16);
+
+          return object;
         })
   };
 
@@ -480,4 +578,35 @@ class MessageEntity_ {
   /// See [MessageEntity.createdAtMs].
   static final createdAtMs =
       obx.QueryIntegerProperty<MessageEntity>(_entities[2].properties[5]);
+}
+
+/// [DocumentChunkEntity] entity fields to define ObjectBox queries.
+class DocumentChunkEntity_ {
+  /// See [DocumentChunkEntity.id].
+  static final id =
+      obx.QueryIntegerProperty<DocumentChunkEntity>(_entities[3].properties[0]);
+
+  /// See [DocumentChunkEntity.documentId].
+  static final documentId =
+      obx.QueryStringProperty<DocumentChunkEntity>(_entities[3].properties[1]);
+
+  /// See [DocumentChunkEntity.chunkId].
+  static final chunkId =
+      obx.QueryStringProperty<DocumentChunkEntity>(_entities[3].properties[2]);
+
+  /// See [DocumentChunkEntity.content].
+  static final content =
+      obx.QueryStringProperty<DocumentChunkEntity>(_entities[3].properties[3]);
+
+  /// See [DocumentChunkEntity.chunkIndex].
+  static final chunkIndex =
+      obx.QueryIntegerProperty<DocumentChunkEntity>(_entities[3].properties[4]);
+
+  /// See [DocumentChunkEntity.createdAtMs].
+  static final createdAtMs =
+      obx.QueryIntegerProperty<DocumentChunkEntity>(_entities[3].properties[5]);
+
+  /// See [DocumentChunkEntity.embedding].
+  static final embedding =
+      obx.QueryHnswProperty<DocumentChunkEntity>(_entities[3].properties[6]);
 }

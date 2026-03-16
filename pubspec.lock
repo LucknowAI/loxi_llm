@@ -222,6 +222,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.7"
+  dart_wordpiece:
+    dependency: "direct main"
+    description:
+      name: dart_wordpiece
+      sha256: "6d3c5b401f2c6e4f9bebf23aa6060c62396a8a708f25b793e013b1e9325a96f8"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.0"
   dbus:
     dependency: transitive
     description:
@@ -565,6 +573,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.0"
+  onnxruntime:
+    dependency: "direct main"
+    description:
+      name: onnxruntime
+      sha256: e77ec05acafc135cc5fe7bcdf11b101b39f06513c9d5e9fa02cb1929f6bac72a
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.4.1"
   package_config:
     dependency: transitive
     description:

@@ -61,6 +61,10 @@ dependencies:
   path_provider: ^2.1.5
   system_info_plus: ^0.0.6
 
+  # Embedding inference
+  onnxruntime: ^1.4.1
+  dart_wordpiece: ^1.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -89,6 +93,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/models/bge-small-en-v1.5-int8.onnx
+    - assets/vocab.txt
 
   # To add assets to your application, add an assets section, like this:
   # assets:

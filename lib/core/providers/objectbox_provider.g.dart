@@ -77,5 +77,22 @@ final messageBoxProvider = Provider<Box<MessageEntity>>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef MessageBoxRef = ProviderRef<Box<MessageEntity>>;
+String _$documentChunkBoxHash() => r'ada884f65ea25de83da39b3d0f232eb6dec81b38';
+
+/// See also [documentChunkBox].
+@ProviderFor(documentChunkBox)
+final documentChunkBoxProvider = Provider<Box<DocumentChunkEntity>>.internal(
+  documentChunkBox,
+  name: r'documentChunkBoxProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$documentChunkBoxHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef DocumentChunkBoxRef = ProviderRef<Box<DocumentChunkEntity>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package
