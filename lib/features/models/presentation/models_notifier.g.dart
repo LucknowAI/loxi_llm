@@ -6,7 +6,7 @@ part of 'models_notifier.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$modelsNotifierHash() => r'ee3026c1ac3110c82a9cbddd5b34a3f273c0b12b';
+String _$modelsNotifierHash() => r'7c48a73ae513cc7d974c674e2ec87a4188d1eafe';
 
 /// See also [ModelsNotifier].
 @ProviderFor(ModelsNotifier)
