@@ -1,0 +1,28 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
+part of 'conversation_list_notifier.dart';
+
+// **************************************************************************
+// RiverpodGenerator
+// **************************************************************************
+
+String _$conversationListNotifierHash() =>
+    r'aad9ebb008e848e9575997a52396f49553adb986';
+
+/// See also [ConversationListNotifier].
+@ProviderFor(ConversationListNotifier)
+final conversationListNotifierProvider = AutoDisposeAsyncNotifierProvider<
+    ConversationListNotifier, List<Conversation>>.internal(
+  ConversationListNotifier.new,
+  name: r'conversationListNotifierProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$conversationListNotifierHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+typedef _$ConversationListNotifier
+    = AutoDisposeAsyncNotifier<List<Conversation>>;
+// ignore_for_file: type=lint
+// ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

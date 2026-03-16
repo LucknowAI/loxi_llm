@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:objectbox/objectbox.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../features/chat/data/conversation_entity.dart';
+import '../../features/chat/data/message_entity.dart';
 import '../../features/models/data/model_entity.dart';
 
 part 'objectbox_provider.g.dart';
@@ -16,4 +18,16 @@ Store objectBoxStore(Ref ref) =>
 Box<ModelEntity> modelBox(Ref ref) {
   final store = ref.watch(objectBoxStoreProvider);
   return store.box<ModelEntity>();
+}
+
+@Riverpod(keepAlive: true)
+Box<ConversationEntity> conversationBox(Ref ref) {
+  final store = ref.watch(objectBoxStoreProvider);
+  return store.box<ConversationEntity>();
+}
+
+@Riverpod(keepAlive: true)
+Box<MessageEntity> messageBox(Ref ref) {
+  final store = ref.watch(objectBoxStoreProvider);
+  return store.box<MessageEntity>();
 }

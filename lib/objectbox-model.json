@@ -66,10 +66,95 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "2:3397758933175363016",
+      "lastPropertyId": "7:8304257888496006624",
+      "name": "ConversationEntity",
+      "properties": [
+        {
+          "id": "1:8338659504522818249",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:3318646997129887212",
+          "name": "conversationId",
+          "type": 9
+        },
+        {
+          "id": "3:999709352492159012",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "4:4968941156692277396",
+          "name": "systemPrompt",
+          "type": 9
+        },
+        {
+          "id": "5:6326203382868806336",
+          "name": "modelId",
+          "type": 9
+        },
+        {
+          "id": "6:5492173874794440716",
+          "name": "createdAtMs",
+          "type": 6
+        },
+        {
+          "id": "7:8304257888496006624",
+          "name": "updatedAtMs",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "3:1451929269734712640",
+      "lastPropertyId": "6:2611781906065260571",
+      "name": "MessageEntity",
+      "properties": [
+        {
+          "id": "1:8470283071808547714",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:3564344743428890684",
+          "name": "conversationId",
+          "type": 9,
+          "flags": 2048,
+          "indexId": "1:2775013009232761216"
+        },
+        {
+          "id": "3:1543897629876389850",
+          "name": "messageId",
+          "type": 9
+        },
+        {
+          "id": "4:2906461717978653520",
+          "name": "role",
+          "type": 9
+        },
+        {
+          "id": "5:4817370127123117284",
+          "name": "content",
+          "type": 9
+        },
+        {
+          "id": "6:2611781906065260571",
+          "name": "createdAtMs",
+          "type": 6
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "1:1939217860881988310",
-  "lastIndexId": "0:0",
+  "lastEntityId": "3:1451929269734712640",
+  "lastIndexId": "1:2775013009232761216",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

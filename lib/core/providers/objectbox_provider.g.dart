@@ -44,5 +44,38 @@ final modelBoxProvider = Provider<Box<ModelEntity>>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ModelBoxRef = ProviderRef<Box<ModelEntity>>;
+String _$conversationBoxHash() => r'af79e62ea40f3ea7b6936f04fc1b738466749387';
+
+/// See also [conversationBox].
+@ProviderFor(conversationBox)
+final conversationBoxProvider = Provider<Box<ConversationEntity>>.internal(
+  conversationBox,
+  name: r'conversationBoxProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$conversationBoxHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ConversationBoxRef = ProviderRef<Box<ConversationEntity>>;
+String _$messageBoxHash() => r'30e134e966a4705b7e1a684ac0cb063ad881fdda';
+
+/// See also [messageBox].
+@ProviderFor(messageBox)
+final messageBoxProvider = Provider<Box<MessageEntity>>.internal(
+  messageBox,
+  name: r'messageBoxProvider',
+  debugGetCreateSourceHash:
+      const bool.fromEnvironment('dart.vm.product') ? null : _$messageBoxHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef MessageBoxRef = ProviderRef<Box<MessageEntity>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

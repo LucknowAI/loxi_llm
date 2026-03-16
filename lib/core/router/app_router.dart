@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../features/chat/presentation/chat_screen.dart';
+import '../../features/chat/presentation/conversation_screen.dart';
 import '../../features/documents/presentation/documents_screen.dart';
 import '../../features/models/presentation/models_screen.dart';
 
@@ -30,6 +31,15 @@ GoRouter appRouter(Ref ref) {
               GoRoute(
                 path: '/chat',
                 builder: (context, state) => const ChatScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':conversationId',
+                    builder: (context, state) => ConversationScreen(
+                      conversationId:
+                          state.pathParameters['conversationId']!,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
