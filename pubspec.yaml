@@ -55,6 +55,12 @@ dependencies:
   flutter_gemma: ^0.11.8      # MediaPipe backend for .task files (Gemma models; >=0.12 needs Dart 3.6)
   flutter_llama: ^1.1.2       # llama.cpp backend for GGUF files (auto-builds native)
 
+  # Model download and storage
+  dio: ^5.9.2
+  file_picker: ^10.3.10
+  path_provider: ^2.1.5
+  system_info_plus: ^0.0.6
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

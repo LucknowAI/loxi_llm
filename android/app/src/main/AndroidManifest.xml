@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for dio HTTP downloads (release builds) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="loki_llm"
         android:name="${applicationName}"

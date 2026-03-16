@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/inference_provider.dart';
+import '../../../core/services/ram_check_service.dart';
 import '../domain/model.dart';
 import '../domain/model_status.dart';
 import 'models_notifier.dart';
@@ -12,7 +13,6 @@ class ModelsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final modelsAsync = ref.watch(modelsNotifierProvider);
 
-    // Show SnackBar on inference errors
     ref.listen(inferenceNotifierProvider, (previous, next) {
       next.whenOrNull(
         error: (e, _) => ScaffoldMessenger.of(context).showSnackBar(
@@ -26,21 +26,17 @@ class ModelsScreen extends ConsumerWidget {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('Models'),
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        icon: const Icon(Icons.file_open),
+        label: const Text('Sideload'),
+        onPressed: () => ref.read(modelsNotifierProvider.notifier).sideloadModel(),
+      ),
       body: modelsAsync.when(
-        data: (models) => models.isEmpty
-            ? const Center(
-                child: Text(
-                  'No models yet.\nDownload a model to get started.',
-                  textAlign: TextAlign.center,
-                ),
-              )
-            : ListView.builder(
-                itemCount: models.length,
-                itemBuilder: (context, index) {
-                  final model = models[index];
-                  return _ModelListTile(model: model);
-                },
-              ),
+        data: (models) => ListView.builder(
+          itemCount: models.length,
+          itemBuilder: (context, index) =>
+              _ModelListTile(model: models[index]),
+        ),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error loading models: $e')),
       ),
@@ -55,21 +51,63 @@ class _ModelListTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ListTile(
-      title: Text(model.name),
-      subtitle: Text('${model.sizeLabel} — ${model.status.name}'),
-      trailing: _trailingWidget(context, ref),
+    return Column(
+      children: [
+        ListTile(
+          title: Text(model.name),
+          subtitle: _subtitle(),
+          trailing: _trailingWidget(context, ref),
+        ),
+        if (model.status == ModelStatus.downloading)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: LinearProgressIndicator(value: model.downloadProgress),
+          ),
+      ],
     );
+  }
+
+  Widget _subtitle() {
+    if (model.status == ModelStatus.downloading) {
+      final pct = (model.downloadProgress * 100).toStringAsFixed(0);
+      return Text('${model.sizeLabel} — $pct%');
+    }
+    return Text('${model.sizeLabel} — ${model.status.name}');
   }
 
   Widget _trailingWidget(BuildContext context, WidgetRef ref) {
     return switch (model.status) {
+      ModelStatus.available => IconButton(
+          icon: const Icon(Icons.cloud_download_outlined),
+          tooltip: 'Download',
+          onPressed: () => ref
+              .read(modelsNotifierProvider.notifier)
+              .downloadModel(model.id),
+        ),
+      ModelStatus.downloading => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: 'Cancel',
+              onPressed: () => ref
+                  .read(modelsNotifierProvider.notifier)
+                  .cancelDownload(model.id),
+            ),
+          ],
+        ),
       ModelStatus.downloaded => IconButton(
           icon: const Icon(Icons.play_arrow, color: Colors.green),
           tooltip: 'Load model',
-          onPressed: () => ref
-              .read(modelsNotifierProvider.notifier)
-              .loadModel(model.id),
+          onPressed: () async {
+            final confirmed = await RamCheckService.confirmLoad(
+              context,
+              modelSizeBytes: model.sizeBytes,
+            );
+            if (confirmed && context.mounted) {
+              ref.read(modelsNotifierProvider.notifier).loadModel(model.id);
+            }
+          },
         ),
       ModelStatus.loading => const SizedBox(
           width: 24,
@@ -83,13 +121,14 @@ class _ModelListTile extends ConsumerWidget {
               .read(modelsNotifierProvider.notifier)
               .unloadModel(model.id),
         ),
-      ModelStatus.downloading => const SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
+      ModelStatus.error => IconButton(
+          icon: const Icon(Icons.refresh),
+          tooltip: 'Retry download',
+          onPressed: () => ref
+              .read(modelsNotifierProvider.notifier)
+              .downloadModel(model.id),
         ),
-      ModelStatus.error => const Icon(Icons.error, color: Colors.red),
-      _ => const Icon(Icons.cloud_download_outlined),
+      _ => const SizedBox.shrink(),
     };
   }
 }

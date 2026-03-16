@@ -1,5 +1,9 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../../core/providers/download_provider.dart';
 import '../../../core/providers/inference_provider.dart';
+import '../data/model_catalog.dart';
 import '../data/model_repository.dart';
 import '../domain/model.dart';
 import '../domain/model_status.dart';
@@ -10,27 +14,126 @@ part 'models_notifier.g.dart';
 class ModelsNotifier extends _$ModelsNotifier {
   @override
   Future<List<Model>> build() async {
-    return ref.watch(modelRepositoryProvider).getAll();
+    final repo = ref.watch(modelRepositoryProvider);
+    var models = repo.getAll();
+    if (models.isEmpty) {
+      // Seed curated models on first launch
+      for (final model in kCuratedModels) {
+        repo.save(model);
+      }
+      models = repo.getAll();
+    }
+    return models;
   }
 
-  /// Load a downloaded model into the inference engine.
-  ///
-  /// Updates status to [ModelStatus.loading] immediately for responsive UI,
-  /// then delegates to [InferenceNotifier.loadModel] which handles the
-  /// backend initialization and final status persistence.
+  /// Download a model from HuggingFace.
+  Future<void> downloadModel(String modelId) async {
+    final repo = ref.read(modelRepositoryProvider);
+    final model = repo.getById(modelId);
+    if (model == null) throw StateError('Model $modelId not found');
+    if (model.filename == null || model.huggingFaceRepo == null) {
+      throw StateError('Model $modelId has no download URL metadata');
+    }
+
+    // Transition to downloading
+    repo.save(model.copyWith(status: ModelStatus.downloading, downloadProgress: 0.0));
+    ref.invalidateSelf();
+
+    final service = ref.read(downloadServiceProvider);
+    final url = huggingFaceDownloadUrl(model);
+
+    try {
+      final savePath = await service.downloadModel(
+        model: model,
+        downloadUrl: url,
+        onProgress: (progress) {
+          final current = repo.getById(modelId);
+          if (current != null) {
+            repo.save(current.copyWith(downloadProgress: progress));
+            ref.invalidateSelf();
+          }
+        },
+      );
+      // Mark as downloaded with local path
+      final downloaded = repo.getById(modelId);
+      if (downloaded != null) {
+        repo.save(downloaded.copyWith(
+          status: ModelStatus.downloaded,
+          localPath: savePath,
+          downloadProgress: 1.0,
+        ));
+      }
+    } catch (e) {
+      final current = repo.getById(modelId);
+      if (current != null) {
+        repo.save(current.copyWith(status: ModelStatus.error));
+      }
+    } finally {
+      ref.invalidateSelf();
+    }
+  }
+
+  /// Cancel an active download and reset status to available.
+  void cancelDownload(String modelId) {
+    final service = ref.read(downloadServiceProvider);
+    service.cancelDownload(modelId);
+    final repo = ref.read(modelRepositoryProvider);
+    final model = repo.getById(modelId);
+    if (model != null) {
+      repo.save(model.copyWith(
+        status: ModelStatus.available,
+        downloadProgress: 0.0,
+      ));
+    }
+    ref.invalidateSelf();
+  }
+
+  /// Sideload a model from device storage via file picker.
+  Future<void> sideloadModel() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowMultiple: false,
+      allowedExtensions: ['gguf', 'task'],
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final file = result.files.first;
+    final path = file.path;
+    if (path == null) return;
+
+    final filename = file.name;
+    final ext = filename.split('.').last.toLowerCase();
+    final format = ext == 'task' ? 'task' : 'gguf';
+    final sizeBytes = file.size > 0 ? file.size : (File(path).existsSync() ? File(path).lengthSync() : 0);
+
+    final repo = ref.read(modelRepositoryProvider);
+    final model = Model(
+      id: 'sideload-${DateTime.now().millisecondsSinceEpoch}',
+      name: filename,
+      sizeLabel: _formatBytes(sizeBytes),
+      sizeBytes: sizeBytes,
+      status: ModelStatus.downloaded,
+      localPath: path,
+      filename: filename,
+      format: format,
+      downloadProgress: 1.0,
+    );
+    repo.save(model);
+    ref.invalidateSelf();
+  }
+
+  /// Load a downloaded model into the inference engine (with RAM check in UI layer).
   Future<void> loadModel(String modelId) async {
     final repo = ref.read(modelRepositoryProvider);
     final model = repo.getById(modelId);
     if (model == null) throw StateError('Model $modelId not found');
 
-    // Persist loading status so tile shows spinner immediately
     repo.save(model.copyWith(status: ModelStatus.loading));
     ref.invalidateSelf();
 
     try {
       await ref.read(inferenceNotifierProvider.notifier).loadModel(model);
     } finally {
-      // Refresh list to pick up the persisted status (loaded or error)
       ref.invalidateSelf();
     }
   }
@@ -43,5 +146,11 @@ class ModelsNotifier extends _$ModelsNotifier {
 
     await ref.read(inferenceNotifierProvider.notifier).unloadModel(model);
     ref.invalidateSelf();
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(0)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 }
