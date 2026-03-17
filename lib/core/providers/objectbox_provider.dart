@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../features/chat/data/conversation_entity.dart';
 import '../../features/chat/data/message_entity.dart';
 import '../../features/documents/data/document_chunk_entity.dart';
+import '../../features/documents/data/document_entity.dart';
 import '../../features/models/data/model_entity.dart';
 
 part 'objectbox_provider.g.dart';
@@ -37,4 +38,10 @@ Box<MessageEntity> messageBox(Ref ref) {
 Box<DocumentChunkEntity> documentChunkBox(Ref ref) {
   final store = ref.watch(objectBoxStoreProvider);
   return store.box<DocumentChunkEntity>();
+}
+
+@Riverpod(keepAlive: true)
+Box<DocumentEntity> documentBox(Ref ref) {
+  final store = ref.watch(objectBoxStoreProvider);
+  return store.box<DocumentEntity>();
 }

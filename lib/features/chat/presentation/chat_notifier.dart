@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../../core/providers/embedding_provider.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../data/conversation_repository.dart';
 import '../data/message_repository.dart';
 import '../domain/message.dart';
 import '../domain/message_role.dart';
+import '../../documents/data/document_chunk_repository.dart';
+import '../../documents/domain/document_chunk.dart';
 import 'conversation_list_notifier.dart';
 
 part 'chat_notifier.g.dart';
@@ -83,11 +86,28 @@ class ChatNotifier extends _$ChatNotifier {
       streamingText: '',
     ));
 
-    // Build prompt from full history + system prompt
+    // Build RAG context if enabled for this conversation
+    List<DocumentChunk> ragChunks = const [];
+    if (conversation?.ragEnabled ?? false) {
+      final embService = ref.read(embeddingServiceProvider).valueOrNull;
+      if (embService != null && embService.isInitialized) {
+        try {
+          final queryVec = await embService.embedQuery(userMsg.content);
+          ragChunks = ref
+              .read(documentChunkRepositoryProvider)
+              .findSimilar(queryVec, topK: 3);
+        } catch (_) {
+          // RAG retrieval failure is non-fatal — continue without context
+        }
+      }
+    }
+
+    // Build prompt from full history + system prompt + RAG context
     final systemPrompt = conversation?.systemPrompt ?? '';
     final prompt = _buildPrompt(
       [...current.messages, userMsg],
       systemPrompt,
+      ragChunks,
     );
 
     // Stream tokens
@@ -128,11 +148,22 @@ class ChatNotifier extends _$ChatNotifier {
     );
   }
 
-  /// Build a simple chat prompt from history + system prompt.
-  String _buildPrompt(List<Message> history, String systemPrompt) {
+  /// Build a simple chat prompt from history + system prompt + optional RAG context.
+  String _buildPrompt(
+    List<Message> history,
+    String systemPrompt, [
+    List<DocumentChunk> ragChunks = const [],
+  ]) {
     final buffer = StringBuffer();
     if (systemPrompt.isNotEmpty) {
       buffer.writeln(systemPrompt);
+      buffer.writeln();
+    }
+    if (ragChunks.isNotEmpty) {
+      buffer.writeln('Use the following context to answer the question:');
+      for (int i = 0; i < ragChunks.length; i++) {
+        buffer.writeln('[${i + 1}] ${ragChunks[i].content}');
+      }
       buffer.writeln();
     }
     for (final msg in history) {

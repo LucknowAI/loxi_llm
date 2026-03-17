@@ -69,7 +69,7 @@
     },
     {
       "id": "2:3397758933175363016",
-      "lastPropertyId": "7:8304257888496006624",
+      "lastPropertyId": "8:1271113386738123098",
       "name": "ConversationEntity",
       "properties": [
         {
@@ -107,6 +107,11 @@
           "id": "7:8304257888496006624",
           "name": "updatedAtMs",
           "type": 6
+        },
+        {
+          "id": "8:1271113386738123098",
+          "name": "ragEnabled",
+          "type": 1
         }
       ],
       "relations": []
@@ -199,9 +204,48 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "5:8928393119267900802",
+      "lastPropertyId": "6:1821189123350733272",
+      "name": "DocumentEntity",
+      "properties": [
+        {
+          "id": "1:3981868051797971963",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:2378283266584503201",
+          "name": "documentId",
+          "type": 9
+        },
+        {
+          "id": "3:7809066392574510351",
+          "name": "name",
+          "type": 9
+        },
+        {
+          "id": "4:7800244516672968673",
+          "name": "format",
+          "type": 9
+        },
+        {
+          "id": "5:822590866216633517",
+          "name": "chunkCount",
+          "type": 6
+        },
+        {
+          "id": "6:1821189123350733272",
+          "name": "createdAtMs",
+          "type": 6
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "4:5529211751291579855",
+  "lastEntityId": "5:8928393119267900802",
   "lastIndexId": "3:4624298418835270228",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",

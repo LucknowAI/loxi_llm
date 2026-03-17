@@ -48,6 +48,14 @@ class ConversationListNotifier extends _$ConversationListNotifier {
     ref.invalidateSelf();
   }
 
+  void toggleRagEnabled(String conversationId) {
+    final repo = ref.read(conversationRepositoryProvider);
+    final conversation = repo.getById(conversationId);
+    if (conversation == null) return;
+    repo.save(conversation.copyWith(ragEnabled: !conversation.ragEnabled));
+    ref.invalidateSelf();
+  }
+
   void deleteConversation(String conversationId) {
     ref.read(messageRepositoryProvider).deleteByConversationId(conversationId);
     ref.read(conversationRepositoryProvider).delete(conversationId);

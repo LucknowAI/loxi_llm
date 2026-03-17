@@ -17,6 +17,7 @@ import 'package:objectbox_flutter_libs/objectbox_flutter_libs.dart';
 import 'features/chat/data/conversation_entity.dart';
 import 'features/chat/data/message_entity.dart';
 import 'features/documents/data/document_chunk_entity.dart';
+import 'features/documents/data/document_entity.dart';
 import 'features/models/data/model_entity.dart';
 
 export 'package:objectbox/objectbox.dart'; // so that callers only have to import this file
@@ -89,7 +90,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
       id: const obx_int.IdUid(2, 3397758933175363016),
       name: 'ConversationEntity',
-      lastPropertyId: const obx_int.IdUid(7, 8304257888496006624),
+      lastPropertyId: const obx_int.IdUid(8, 1271113386738123098),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
@@ -126,6 +127,11 @@ final _entities = <obx_int.ModelEntity>[
             id: const obx_int.IdUid(7, 8304257888496006624),
             name: 'updatedAtMs',
             type: 6,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(8, 1271113386738123098),
+            name: 'ragEnabled',
+            type: 1,
             flags: 0)
       ],
       relations: <obx_int.ModelRelation>[],
@@ -218,6 +224,45 @@ final _entities = <obx_int.ModelEntity>[
             ))
       ],
       relations: <obx_int.ModelRelation>[],
+      backlinks: <obx_int.ModelBacklink>[]),
+  obx_int.ModelEntity(
+      id: const obx_int.IdUid(5, 8928393119267900802),
+      name: 'DocumentEntity',
+      lastPropertyId: const obx_int.IdUid(6, 1821189123350733272),
+      flags: 0,
+      properties: <obx_int.ModelProperty>[
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(1, 3981868051797971963),
+            name: 'id',
+            type: 6,
+            flags: 1),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(2, 2378283266584503201),
+            name: 'documentId',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(3, 7809066392574510351),
+            name: 'name',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(4, 7800244516672968673),
+            name: 'format',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(5, 822590866216633517),
+            name: 'chunkCount',
+            type: 6,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(6, 1821189123350733272),
+            name: 'createdAtMs',
+            type: 6,
+            flags: 0)
+      ],
+      relations: <obx_int.ModelRelation>[],
       backlinks: <obx_int.ModelBacklink>[])
 ];
 
@@ -256,7 +301,7 @@ Future<obx.Store> openStore(
 obx_int.ModelDefinition getObjectBoxModel() {
   final model = obx_int.ModelInfo(
       entities: _entities,
-      lastEntityId: const obx_int.IdUid(4, 5529211751291579855),
+      lastEntityId: const obx_int.IdUid(5, 8928393119267900802),
       lastIndexId: const obx_int.IdUid(3, 4624298418835270228),
       lastRelationId: const obx_int.IdUid(0, 0),
       lastSequenceId: const obx_int.IdUid(0, 0),
@@ -348,7 +393,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final titleOffset = fbb.writeString(object.title);
           final systemPromptOffset = fbb.writeString(object.systemPrompt);
           final modelIdOffset = fbb.writeString(object.modelId);
-          fbb.startTable(8);
+          fbb.startTable(9);
           fbb.addInt64(0, object.id);
           fbb.addOffset(1, conversationIdOffset);
           fbb.addOffset(2, titleOffset);
@@ -356,6 +401,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           fbb.addOffset(4, modelIdOffset);
           fbb.addInt64(5, object.createdAtMs);
           fbb.addInt64(6, object.updatedAtMs);
+          fbb.addBool(7, object.ragEnabled);
           fbb.finish(fbb.endTable());
           return object.id;
         },
@@ -376,7 +422,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
             ..createdAtMs =
                 const fb.Int64Reader().vTableGet(buffer, rootOffset, 14, 0)
             ..updatedAtMs =
-                const fb.Int64Reader().vTableGet(buffer, rootOffset, 16, 0);
+                const fb.Int64Reader().vTableGet(buffer, rootOffset, 16, 0)
+            ..ragEnabled =
+                const fb.BoolReader().vTableGet(buffer, rootOffset, 18, false);
 
           return object;
         }),
@@ -469,6 +517,47 @@ obx_int.ModelDefinition getObjectBoxModel() {
                     .vTableGetNullable(buffer, rootOffset, 16);
 
           return object;
+        }),
+    DocumentEntity: obx_int.EntityDefinition<DocumentEntity>(
+        model: _entities[4],
+        toOneRelations: (DocumentEntity object) => [],
+        toManyRelations: (DocumentEntity object) => {},
+        getId: (DocumentEntity object) => object.id,
+        setId: (DocumentEntity object, int id) {
+          object.id = id;
+        },
+        objectToFB: (DocumentEntity object, fb.Builder fbb) {
+          final documentIdOffset = fbb.writeString(object.documentId);
+          final nameOffset = fbb.writeString(object.name);
+          final formatOffset = fbb.writeString(object.format);
+          fbb.startTable(7);
+          fbb.addInt64(0, object.id);
+          fbb.addOffset(1, documentIdOffset);
+          fbb.addOffset(2, nameOffset);
+          fbb.addOffset(3, formatOffset);
+          fbb.addInt64(4, object.chunkCount);
+          fbb.addInt64(5, object.createdAtMs);
+          fbb.finish(fbb.endTable());
+          return object.id;
+        },
+        objectFromFB: (obx.Store store, ByteData fbData) {
+          final buffer = fb.BufferContext(fbData);
+          final rootOffset = buffer.derefObject(0);
+
+          final object = DocumentEntity()
+            ..id = const fb.Int64Reader().vTableGet(buffer, rootOffset, 4, 0)
+            ..documentId = const fb.StringReader(asciiOptimization: true)
+                .vTableGet(buffer, rootOffset, 6, '')
+            ..name = const fb.StringReader(asciiOptimization: true)
+                .vTableGet(buffer, rootOffset, 8, '')
+            ..format = const fb.StringReader(asciiOptimization: true)
+                .vTableGet(buffer, rootOffset, 10, '')
+            ..chunkCount =
+                const fb.Int64Reader().vTableGet(buffer, rootOffset, 12, 0)
+            ..createdAtMs =
+                const fb.Int64Reader().vTableGet(buffer, rootOffset, 14, 0);
+
+          return object;
         })
   };
 
@@ -551,6 +640,10 @@ class ConversationEntity_ {
   /// See [ConversationEntity.updatedAtMs].
   static final updatedAtMs =
       obx.QueryIntegerProperty<ConversationEntity>(_entities[1].properties[6]);
+
+  /// See [ConversationEntity.ragEnabled].
+  static final ragEnabled =
+      obx.QueryBooleanProperty<ConversationEntity>(_entities[1].properties[7]);
 }
 
 /// [MessageEntity] entity fields to define ObjectBox queries.
@@ -609,4 +702,31 @@ class DocumentChunkEntity_ {
   /// See [DocumentChunkEntity.embedding].
   static final embedding =
       obx.QueryHnswProperty<DocumentChunkEntity>(_entities[3].properties[6]);
+}
+
+/// [DocumentEntity] entity fields to define ObjectBox queries.
+class DocumentEntity_ {
+  /// See [DocumentEntity.id].
+  static final id =
+      obx.QueryIntegerProperty<DocumentEntity>(_entities[4].properties[0]);
+
+  /// See [DocumentEntity.documentId].
+  static final documentId =
+      obx.QueryStringProperty<DocumentEntity>(_entities[4].properties[1]);
+
+  /// See [DocumentEntity.name].
+  static final name =
+      obx.QueryStringProperty<DocumentEntity>(_entities[4].properties[2]);
+
+  /// See [DocumentEntity.format].
+  static final format =
+      obx.QueryStringProperty<DocumentEntity>(_entities[4].properties[3]);
+
+  /// See [DocumentEntity.chunkCount].
+  static final chunkCount =
+      obx.QueryIntegerProperty<DocumentEntity>(_entities[4].properties[4]);
+
+  /// See [DocumentEntity.createdAtMs].
+  static final createdAtMs =
+      obx.QueryIntegerProperty<DocumentEntity>(_entities[4].properties[5]);
 }

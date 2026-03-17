@@ -23,5 +23,8 @@ class ConversationEntity {
   @Property()
   int updatedAtMs = 0;
 
+  @Property()
+  bool ragEnabled = false;
+
   ConversationEntity();
 }

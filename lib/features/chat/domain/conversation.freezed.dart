@@ -26,6 +26,7 @@ mixin _$Conversation {
   String get modelId => throw _privateConstructorUsedError;
   int get createdAtMs => throw _privateConstructorUsedError;
   int get updatedAtMs => throw _privateConstructorUsedError;
+  bool get ragEnabled => throw _privateConstructorUsedError;
 
   /// Serializes this Conversation to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -49,7 +50,8 @@ abstract class $ConversationCopyWith<$Res> {
       String systemPrompt,
       String modelId,
       int createdAtMs,
-      int updatedAtMs});
+      int updatedAtMs,
+      bool ragEnabled});
 }
 
 /// @nodoc
@@ -73,6 +75,7 @@ class _$ConversationCopyWithImpl<$Res, $Val extends Conversation>
     Object? modelId = null,
     Object? createdAtMs = null,
     Object? updatedAtMs = null,
+    Object? ragEnabled = null,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -99,6 +102,10 @@ class _$ConversationCopyWithImpl<$Res, $Val extends Conversation>
           ? _value.updatedAtMs
           : updatedAtMs // ignore: cast_nullable_to_non_nullable
               as int,
+      ragEnabled: null == ragEnabled
+          ? _value.ragEnabled
+          : ragEnabled // ignore: cast_nullable_to_non_nullable
+              as bool,
     ) as $Val);
   }
 }
@@ -117,7 +124,8 @@ abstract class _$$ConversationImplCopyWith<$Res>
       String systemPrompt,
       String modelId,
       int createdAtMs,
-      int updatedAtMs});
+      int updatedAtMs,
+      bool ragEnabled});
 }
 
 /// @nodoc
@@ -139,6 +147,7 @@ class __$$ConversationImplCopyWithImpl<$Res>
     Object? modelId = null,
     Object? createdAtMs = null,
     Object? updatedAtMs = null,
+    Object? ragEnabled = null,
   }) {
     return _then(_$ConversationImpl(
       id: null == id
@@ -165,6 +174,10 @@ class __$$ConversationImplCopyWithImpl<$Res>
           ? _value.updatedAtMs
           : updatedAtMs // ignore: cast_nullable_to_non_nullable
               as int,
+      ragEnabled: null == ragEnabled
+          ? _value.ragEnabled
+          : ragEnabled // ignore: cast_nullable_to_non_nullable
+              as bool,
     ));
   }
 }
@@ -178,7 +191,8 @@ class _$ConversationImpl extends _Conversation {
       this.systemPrompt = '',
       this.modelId = '',
       required this.createdAtMs,
-      required this.updatedAtMs})
+      required this.updatedAtMs,
+      this.ragEnabled = false})
       : super._();
 
   factory _$ConversationImpl.fromJson(Map<String, dynamic> json) =>
@@ -198,10 +212,13 @@ class _$ConversationImpl extends _Conversation {
   final int createdAtMs;
   @override
   final int updatedAtMs;
+  @override
+  @JsonKey()
+  final bool ragEnabled;
 
   @override
   String toString() {
-    return 'Conversation(id: $id, title: $title, systemPrompt: $systemPrompt, modelId: $modelId, createdAtMs: $createdAtMs, updatedAtMs: $updatedAtMs)';
+    return 'Conversation(id: $id, title: $title, systemPrompt: $systemPrompt, modelId: $modelId, createdAtMs: $createdAtMs, updatedAtMs: $updatedAtMs, ragEnabled: $ragEnabled)';
   }
 
   @override
@@ -217,13 +234,15 @@ class _$ConversationImpl extends _Conversation {
             (identical(other.createdAtMs, createdAtMs) ||
                 other.createdAtMs == createdAtMs) &&
             (identical(other.updatedAtMs, updatedAtMs) ||
-                other.updatedAtMs == updatedAtMs));
+                other.updatedAtMs == updatedAtMs) &&
+            (identical(other.ragEnabled, ragEnabled) ||
+                other.ragEnabled == ragEnabled));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(
-      runtimeType, id, title, systemPrompt, modelId, createdAtMs, updatedAtMs);
+  int get hashCode => Object.hash(runtimeType, id, title, systemPrompt, modelId,
+      createdAtMs, updatedAtMs, ragEnabled);
 
   /// Create a copy of Conversation
   /// with the given fields replaced by the non-null parameter values.
@@ -248,7 +267,8 @@ abstract class _Conversation extends Conversation {
       final String systemPrompt,
       final String modelId,
       required final int createdAtMs,
-      required final int updatedAtMs}) = _$ConversationImpl;
+      required final int updatedAtMs,
+      final bool ragEnabled}) = _$ConversationImpl;
   const _Conversation._() : super._();
 
   factory _Conversation.fromJson(Map<String, dynamic> json) =
@@ -266,6 +286,8 @@ abstract class _Conversation extends Conversation {
   int get createdAtMs;
   @override
   int get updatedAtMs;
+  @override
+  bool get ragEnabled;
 
   /// Create a copy of Conversation
   /// with the given fields replaced by the non-null parameter values.

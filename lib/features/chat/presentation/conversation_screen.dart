@@ -116,6 +116,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final conversation = ref
         .watch(conversationRepositoryProvider)
         .getById(widget.conversationId);
+    final conversations =
+        ref.watch(conversationListNotifierProvider).valueOrNull ?? [];
+    final currentConv = conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    final isRagEnabled = currentConv?.ragEnabled ?? false;
 
     final isModelLoaded = backendAsync.valueOrNull != null;
 
@@ -124,6 +130,20 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(conversation?.title ?? 'Chat'),
         actions: [
+          IconButton(
+            icon: Icon(
+              isRagEnabled ? Icons.auto_awesome : Icons.auto_awesome_outlined,
+              color: isRagEnabled
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+            tooltip: isRagEnabled
+                ? 'RAG mode on — tap to disable'
+                : 'RAG mode off — tap to enable',
+            onPressed: () => ref
+                .read(conversationListNotifierProvider.notifier)
+                .toggleRagEnabled(widget.conversationId),
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'System prompt',

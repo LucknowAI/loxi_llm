@@ -94,5 +94,21 @@ final documentChunkBoxProvider = Provider<Box<DocumentChunkEntity>>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef DocumentChunkBoxRef = ProviderRef<Box<DocumentChunkEntity>>;
+String _$documentBoxHash() => r'612392ef5471690744067a1f77c6e56a5edd1753';
+
+/// See also [documentBox].
+@ProviderFor(documentBox)
+final documentBoxProvider = Provider<Box<DocumentEntity>>.internal(
+  documentBox,
+  name: r'documentBoxProvider',
+  debugGetCreateSourceHash:
+      const bool.fromEnvironment('dart.vm.product') ? null : _$documentBoxHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef DocumentBoxRef = ProviderRef<Box<DocumentEntity>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

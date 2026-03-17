@@ -14,6 +14,7 @@ class Conversation with _$Conversation {
     @Default('') String modelId,
     required int createdAtMs,
     required int updatedAtMs,
+    @Default(false) bool ragEnabled,
   }) = _Conversation;
 
   factory Conversation.fromJson(Map<String, dynamic> json) =>
