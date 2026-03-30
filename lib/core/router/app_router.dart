@@ -6,14 +6,28 @@ import '../../features/chat/presentation/chat_screen.dart';
 import '../../features/chat/presentation/conversation_screen.dart';
 import '../../features/documents/presentation/documents_screen.dart';
 import '../../features/models/presentation/models_screen.dart';
+import '../../features/onboarding/presentation/onboarding_screen.dart';
+import '../../features/settings/presentation/settings_screen.dart';
+import '../providers/shared_preferences_provider.dart';
 
 part 'app_router.g.dart';
 
 @Riverpod(keepAlive: true)
 GoRouter appRouter(Ref ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  final sawOnboarding = prefs.getBool('onboarding_complete') ?? false;
+
   return GoRouter(
-    initialLocation: '/models',
+    initialLocation: sawOnboarding ? '/models' : '/onboarding',
     routes: [
+      GoRoute(
+        path: '/onboarding',
+        builder: (context, state) => const OnboardingScreen(),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsScreen(),
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
             _ScaffoldWithNavBar(navigationShell: navigationShell),

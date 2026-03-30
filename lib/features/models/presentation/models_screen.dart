@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../../../core/services/ram_check_service.dart';
 import '../domain/model.dart';
@@ -25,6 +26,13 @@ class ModelsScreen extends ConsumerWidget {
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('Models'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
+            onPressed: () => context.push('/settings'),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.file_open),
@@ -68,11 +76,24 @@ class _ModelListTile extends ConsumerWidget {
   }
 
   Widget _subtitle() {
-    if (model.status == ModelStatus.downloading) {
-      final pct = (model.downloadProgress * 100).toStringAsFixed(0);
-      return Text('${model.sizeLabel} — $pct%');
-    }
-    return Text('${model.sizeLabel} — ${model.status.name}');
+    final badge = model.recommendationBadge;
+    final statusText = model.status == ModelStatus.downloading
+        ? '${model.sizeLabel} — ${(model.downloadProgress * 100).toStringAsFixed(0)}%'
+        : '${model.sizeLabel} — ${model.status.name}';
+    if (badge == null) return Text(statusText);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(statusText),
+        const SizedBox(height: 4),
+        Chip(
+          label: Text(badge),
+          padding: EdgeInsets.zero,
+          labelStyle: const TextStyle(fontSize: 11),
+          visualDensity: VisualDensity.compact,
+        ),
+      ],
+    );
   }
 
   Widget _trailingWidget(BuildContext context, WidgetRef ref) {

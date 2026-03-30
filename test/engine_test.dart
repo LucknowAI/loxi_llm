@@ -6,9 +6,11 @@ import 'package:loki_llm/core/engine/llama_cpp_backend.dart';
 import 'package:loki_llm/core/engine/mediapipe_backend.dart';
 import 'package:loki_llm/core/providers/inference_provider.dart';
 import 'package:loki_llm/core/providers/objectbox_provider.dart';
+import 'package:loki_llm/core/providers/shared_preferences_provider.dart';
 import 'package:loki_llm/features/models/domain/model.dart';
 import 'package:loki_llm/features/models/domain/model_status.dart';
 import 'package:loki_llm/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   group('backendForModel (backend selector)', () {
@@ -111,12 +113,16 @@ void main() {
 
   group('ChatScreen widget', () {
     testWidgets('shows load-model prompt when no backend loaded', (tester) async {
+      SharedPreferences.setMockInitialValues({'onboarding_complete': true});
+      final prefs = await SharedPreferences.getInstance();
+
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             objectBoxStoreProvider.overrideWith(
               (ref) => throw UnimplementedError('No store in test'),
             ),
+            sharedPreferencesProvider.overrideWithValue(prefs),
           ],
           child: const MyApp(),
         ),

@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loki_llm/core/providers/objectbox_provider.dart';
+import 'package:loki_llm/core/providers/shared_preferences_provider.dart';
 import 'package:loki_llm/features/models/domain/model.dart';
 import 'package:loki_llm/features/models/domain/model_status.dart';
 import 'package:loki_llm/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   group('MyApp navigation smoke test', () {
     testWidgets('renders 3-tab bottom navigation', (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'onboarding_complete': true});
+      final prefs = await SharedPreferences.getInstance();
+
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -17,6 +22,7 @@ void main() {
             objectBoxStoreProvider.overrideWith(
               (ref) => throw UnimplementedError('No store in test'),
             ),
+            sharedPreferencesProvider.overrideWithValue(prefs),
           ],
           child: const MyApp(),
         ),

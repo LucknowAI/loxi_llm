@@ -51,13 +51,16 @@ dependencies:
   # Navigation
   go_router: ^14.3.0
 
+  # Settings persistence
+  shared_preferences: ^2.3.2
+
   # LLM Inference backends
   flutter_gemma: ^0.11.8      # MediaPipe backend for .task files (Gemma models; >=0.12 needs Dart 3.6)
   flutter_llama: ^1.1.2       # llama.cpp backend for GGUF files (auto-builds native)
 
   # Model download and storage
   dio: ^5.9.2
-  file_picker: ^10.3.10
+  file_picker: ^8.1.0
   path_provider: ^2.1.5
   system_info_plus: ^0.0.6
 
@@ -69,6 +72,12 @@ dependencies:
   flutter_pdf_text: ^0.9.0
   docx_to_text: ^1.0.1
   langchain: ^0.7.7+2
+
+# Local vendored packages — patched copies of pub.dev packages.
+# See local_packages/README.md for patch rationale and maintenance notes.
+dependency_overrides:
+  flutter_llama:
+    path: local_packages/flutter_llama
 
 dev_dependencies:
   flutter_test:

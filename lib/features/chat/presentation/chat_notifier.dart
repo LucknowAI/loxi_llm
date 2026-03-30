@@ -8,6 +8,7 @@ import '../domain/message.dart';
 import '../domain/message_role.dart';
 import '../../documents/data/document_chunk_repository.dart';
 import '../../documents/domain/document_chunk.dart';
+import '../../settings/presentation/settings_notifier.dart';
 import 'conversation_list_notifier.dart';
 
 part 'chat_notifier.g.dart';
@@ -93,9 +94,10 @@ class ChatNotifier extends _$ChatNotifier {
       if (embService != null && embService.isInitialized) {
         try {
           final queryVec = await embService.embedQuery(userMsg.content);
+          final topK = ref.read(settingsNotifierProvider).topK;
           ragChunks = ref
               .read(documentChunkRepositoryProvider)
-              .findSimilar(queryVec, topK: 3);
+              .findSimilar(queryVec, topK: topK);
         } catch (_) {
           // RAG retrieval failure is non-fatal — continue without context
         }
@@ -110,10 +112,13 @@ class ChatNotifier extends _$ChatNotifier {
       ragChunks,
     );
 
-    // Stream tokens
+    // Stream tokens (60-second timeout resets after each token)
     final buffer = StringBuffer();
     _tokenSub?.cancel();
-    _tokenSub = backend.generate(prompt).listen(
+    _tokenSub = backend
+        .generate(prompt)
+        .timeout(const Duration(seconds: 60))
+        .listen(
       (token) {
         buffer.write(token);
         state = AsyncData(
@@ -145,6 +150,7 @@ class ChatNotifier extends _$ChatNotifier {
       onError: (Object e, StackTrace st) {
         state = AsyncError(e, st);
       },
+      cancelOnError: true,
     );
   }
 

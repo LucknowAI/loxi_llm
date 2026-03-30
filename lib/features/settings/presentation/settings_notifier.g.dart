@@ -1,26 +1,26 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'documents_notifier.dart';
+part of 'settings_notifier.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$documentsNotifierHash() => r'43b809f6448fef91eb7eb04ac00e94158f3403eb';
+String _$settingsNotifierHash() => r'0544cd3ef79dd1dde5c17f81f462110ffe02719d';
 
-/// See also [DocumentsNotifier].
-@ProviderFor(DocumentsNotifier)
-final documentsNotifierProvider = AutoDisposeAsyncNotifierProvider<
-    DocumentsNotifier, List<Document>>.internal(
-  DocumentsNotifier.new,
-  name: r'documentsNotifierProvider',
+/// See also [SettingsNotifier].
+@ProviderFor(SettingsNotifier)
+final settingsNotifierProvider =
+    AutoDisposeNotifierProvider<SettingsNotifier, AppSettings>.internal(
+  SettingsNotifier.new,
+  name: r'settingsNotifierProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
       ? null
-      : _$documentsNotifierHash,
+      : _$settingsNotifierHash,
   dependencies: null,
   allTransitiveDependencies: null,
 );
 
-typedef _$DocumentsNotifier = AutoDisposeAsyncNotifier<List<Document>>;
+typedef _$SettingsNotifier = AutoDisposeNotifier<AppSettings>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

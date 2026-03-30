@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:langchain/langchain.dart' hide Document;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -7,6 +8,7 @@ import '../../../features/documents/data/document_chunk_repository.dart';
 import '../../../features/documents/data/document_repository.dart';
 import '../../../features/documents/domain/document.dart';
 import '../../../features/documents/domain/document_chunk.dart';
+import '../../settings/presentation/settings_notifier.dart';
 
 part 'documents_notifier.g.dart';
 
@@ -34,13 +36,24 @@ class DocumentsNotifier extends _$DocumentsNotifier {
   Future<void> _ingest(String filePath, String fileName) async {
     state = const AsyncLoading();
     try {
+      // 0. Guard: reject files > 10 MB
+      final fileSize = await File(filePath).length();
+      if (fileSize > 10 * 1024 * 1024) {
+        state = AsyncError(
+          'File too large (max 10 MB)',
+          StackTrace.current,
+        );
+        return;
+      }
+
       // 1. Extract text
       final extractor = TextExtractionService();
       final text = await extractor.extractText(filePath);
 
-      // 2. Chunk
-      const splitter = RecursiveCharacterTextSplitter(
-        chunkSize: 300,
+      // 2. Chunk — use chunkSize from settings
+      final chunkSize = ref.read(settingsNotifierProvider).chunkSize;
+      final splitter = RecursiveCharacterTextSplitter(
+        chunkSize: chunkSize,
         chunkOverlap: 50,
       );
       final chunkTexts = splitter.splitText(text);

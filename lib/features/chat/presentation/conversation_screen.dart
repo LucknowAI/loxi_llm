@@ -202,6 +202,34 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             ),
           ),
 
+          // Quick task shortcut chips
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: [
+                for (final entry in const [
+                  ('Translate', 'Translate the following to English:\n'),
+                  ('Refine', 'Refine and improve the following text:\n'),
+                  ('Summarize', 'Summarize the following in 3 bullet points:\n'),
+                  ('Explain', 'Explain the following in simple terms:\n'),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ActionChip(
+                      label: Text(entry.$1),
+                      onPressed: () {
+                        _textController.text = entry.$2;
+                        _textController.selection = TextSelection.fromPosition(
+                          TextPosition(offset: _textController.text.length),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
           // Text input
           Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 8, 16),
