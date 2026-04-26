@@ -6,11 +6,11 @@ const List<Model> kCuratedModels = [
   Model(
     id: 'gemma3-270m-it',
     name: 'Gemma 3 270M IT',
-    sizeLabel: '304 MB',
-    sizeBytes: 318767104,
-    format: 'task',
-    huggingFaceRepo: 'litert-community/gemma-3-270m-it',
-    filename: 'gemma3-270m-it-q8.task',
+    sizeLabel: '253 MB',
+    sizeBytes: 265289728,
+    format: 'gguf',
+    huggingFaceRepo: 'unsloth/gemma-3-270m-it-GGUF',
+    filename: 'gemma-3-270m-it-Q4_K_M.gguf',
   ),
   Model(
     id: 'phi3-mini-4k-q4km',

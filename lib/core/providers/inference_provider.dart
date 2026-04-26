@@ -48,11 +48,15 @@ class InferenceNotifier extends _$InferenceNotifier {
   }
 
   /// Unload the current backend and reset [model] status to downloaded.
+  ///
+  /// Always resets the persisted status, even when no backend is alive
+  /// in memory — this recovers from desync after an app restart where the
+  /// row still says `loaded` but [build] returned null.
   Future<void> unloadModel(Model model) async {
     final current = state.valueOrNull;
-    if (current == null) return;
-
-    await current.unloadModel();
+    if (current != null) {
+      await current.unloadModel();
+    }
     state = const AsyncData(null);
     ref.read(modelRepositoryProvider).save(
           model.copyWith(status: ModelStatus.downloaded),

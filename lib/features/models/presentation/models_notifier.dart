@@ -23,7 +23,22 @@ class ModelsNotifier extends _$ModelsNotifier {
       }
       models = repo.getAll();
     }
-    return models;
+    // Reconcile stale in-memory state: no backend survives an app restart,
+    // so any row persisted as loaded/loading must drop back to downloaded.
+    final reconciled = <Model>[];
+    var changed = false;
+    for (final m in models) {
+      if ((m.status == ModelStatus.loaded || m.status == ModelStatus.loading) &&
+          m.localPath != null) {
+        final fixed = m.copyWith(status: ModelStatus.downloaded);
+        repo.save(fixed);
+        reconciled.add(fixed);
+        changed = true;
+      } else {
+        reconciled.add(m);
+      }
+    }
+    return changed ? reconciled : models;
   }
 
   /// Download a model from HuggingFace.

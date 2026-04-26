@@ -28,7 +28,7 @@ class RamCheckService {
         content: Text(
           'This model requires approximately ${(modelSizeMb / 1024).toStringAsFixed(1)} GB of RAM. '
           'On devices with limited memory, this may cause the app to crash.\n\n'
-          'Recommended: use Gemma 3 270M (304 MB) on this device.',
+          'Recommended: use Gemma 3 270M (253 MB) on this device.',
         ),
         actions: [
           TextButton(
