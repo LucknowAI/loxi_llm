@@ -154,12 +154,23 @@ class ChatNotifier extends _$ChatNotifier {
     );
   }
 
+  /// Most recent conversation messages to include in the prompt. Older turns
+  /// are dropped so a long conversation never produces a prompt that overflows
+  /// the model's context window (the native backend hard-truncates beyond
+  /// this, but windowing here preserves the system prompt + RAG context).
+  static const int _maxHistoryMessages = 20;
+
   /// Build a simple chat prompt from history + system prompt + optional RAG context.
   String _buildPrompt(
     List<Message> history,
     String systemPrompt, [
     List<DocumentChunk> ragChunks = const [],
   ]) {
+    // Keep only the most recent turns to bound prompt size.
+    final windowedHistory = history.length > _maxHistoryMessages
+        ? history.sublist(history.length - _maxHistoryMessages)
+        : history;
+
     final buffer = StringBuffer();
     if (systemPrompt.isNotEmpty) {
       buffer.writeln(systemPrompt);
@@ -172,7 +183,7 @@ class ChatNotifier extends _$ChatNotifier {
       }
       buffer.writeln();
     }
-    for (final msg in history) {
+    for (final msg in windowedHistory) {
       final prefix = msg.isUser ? 'Human: ' : 'Assistant: ';
       buffer.writeln('$prefix${msg.content}');
     }
