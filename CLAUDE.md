@@ -1,57 +1,61 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository.
 
 ## Commands
 
 ```bash
-# Install dependencies
-flutter pub get
-
-# Run the app
-flutter run
-
-# Run on a specific device
-flutter run -d <device-id>
-
-# Build
-flutter build apk           # Android
-flutter build ios           # iOS
-
-# Lint / static analysis
-flutter analyze
-
-# Run tests
-flutter test
-
-# Run a single test file
-flutter test test/widget_test.dart
+fvm flutter pub get
+fvm flutter run
+fvm flutter run -d <device-id>
+fvm flutter analyze
+fvm flutter test
+fvm flutter test test/<file>_test.dart
+dart run build_runner build --delete-conflicting-outputs
+fvm flutter build apk
+fvm flutter build ios
 ```
 
-## Architecture
+After cloning, initialize submodules:
 
-This is an early-stage Flutter app (`loki_llm`) for managing and chatting with local LLM models on-device.
+```bash
+git submodule update --init --recursive
+```
 
-### Current structure (`lib/`)
+## Project summary
 
-- **`main.dart`** — Entry point and `ModelListPage` widget. Displays a list of hardcoded `Model` objects with download/pause/cancel/load actions. Download is currently simulated with a `Timer`.
-- **`model/model.dart`** — Plain `Model` class with `name`, `size`, and mutable `status` fields. The git history indicates `model.freezed.dart` and `model.g.dart` are planned, suggesting a migration to `freezed` + `json_serializable` for immutable models with serialization.
-- **`util/downloader.dart`** — Placeholder file for actual model download logic (currently empty).
-- **`util/storage.dart`** — Planned but not yet implemented; intended for local persistence.
-- **`chat.dart`** — Planned chat UI screen; not yet created.
+**Loki LLM** is a Flutter app for on-device LLM inference on Android and iOS. It uses Riverpod for state, ObjectBox for persistence (including HNSW vector search), and `go_router` for navigation.
 
-### Intended flow
+## Architecture (`lib/`)
 
-1. **Model list screen** (`ModelListPage`) — browse available models, initiate downloads
-2. **Download management** — `downloader.dart` will handle actual HTTP downloads with pause/resume/cancel
-3. **Storage** — `storage.dart` will persist model metadata and download state locally
-4. **Chat screen** (`chat.dart`) — load a downloaded model and interact with it
+- **`main.dart`** — Initializes ObjectBox + SharedPreferences, wraps app in `ProviderScope` with overrides.
+- **`core/engine/`** — `InferenceBackend` abstraction; `LlamaCppBackend` (`.gguf`) and `MediaPipeBackend` (`.task`); `backendForModel()` selector.
+- **`core/providers/`** — `inferenceNotifierProvider`, `embeddingServiceProvider`, `downloadServiceProvider`, `objectBoxStoreProvider`, `sharedPreferencesProvider`.
+- **`core/router/app_router.dart`** — GoRouter: onboarding, settings, tab shell (Models / Chat / Documents).
+- **`features/models/`** — `kCuratedModels` catalog, `ModelRepository`, `DownloadService`, `ModelsNotifier`, `ModelsScreen`.
+- **`features/chat/`** — Conversations, messages, `ChatNotifier` (streaming + optional RAG), chat UI.
+- **`features/documents/`** — PDF/DOCX/TXT ingestion, chunking, embeddings, HNSW retrieval.
+- **`features/settings/`** — `chunkSize` and `topK` via SharedPreferences.
+- **`features/onboarding/`** — First-run `PageView`; sets `onboarding_complete` flag.
 
-### Planned dependencies (not yet in pubspec.yaml)
+## Key conventions
 
-The presence of `model.freezed.dart` / `model.g.dart` in the repo suggests upcoming use of:
-- `freezed` — immutable data classes
-- `json_serializable` / `freezed_annotation` — JSON serialization
-- `build_runner` — code generation (`dart run build_runner build`)
+- Domain models use **freezed** + **json_serializable**; run `build_runner` after changing annotated classes.
+- Riverpod notifiers use **riverpod_annotation** / code generation (`.g.dart` files).
+- ObjectBox entities live in `data/*_entity.dart`; repositories map entity ↔ domain.
+- Only one model loaded at a time via `InferenceNotifier`.
+- RAG is per-conversation (`Conversation.ragEnabled`); retrieval failures fall back to vanilla generation.
 
-When these are added, run `dart run build_runner build --delete-conflicting-outputs` to regenerate `.freezed.dart` and `.g.dart` files.
+## Testing
+
+Tests live in `test/`. Native plugins (ObjectBox, llama, gemma, ONNX) are mocked or use in-memory configs where needed. See `docs/PROJECT.md` §13 for coverage map.
+
+## Documentation
+
+- **Architecture deep-dive:** `docs/PROJECT.md`
+- **Vendored packages:** `local_packages/README.md`
+
+## Do not commit
+
+- `.claude/` — local AI tooling only (gitignored)
+- `.fvm/` — FVM cache (gitignored)
