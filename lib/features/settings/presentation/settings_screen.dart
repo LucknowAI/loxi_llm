@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'settings_notifier.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -42,6 +43,15 @@ class SettingsScreen extends ConsumerWidget {
             divisions: 9,
             label: settings.topK.toString(),
             onChanged: (v) => notifier.setTopK(v.round()),
+          ),
+          const Divider(height: 32),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.bug_report_outlined),
+            title: const Text('Diagnostic logs'),
+            subtitle: const Text('View app + inference logs'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/logs'),
           ),
         ],
       ),

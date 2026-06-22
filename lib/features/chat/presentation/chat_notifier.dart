@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../../core/logging/app_logger.dart';
 import '../../../core/providers/embedding_provider.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../data/conversation_repository.dart';
@@ -49,12 +50,22 @@ class ChatNotifier extends _$ChatNotifier {
     return ChatState(messages: messages);
   }
 
+  static const _logTag = 'ChatNotifier';
+
   /// Send a user message and stream the assistant response.
   Future<void> send(String userText) async {
+    final log = AppLogger.instance;
     if (userText.trim().isEmpty) return;
 
+    log.info(_logTag,
+        'send() conversation=$conversationId userTextLen=${userText.trim().length}');
+
     final backend = ref.read(inferenceNotifierProvider).valueOrNull;
-    if (backend == null) throw StateError('No model loaded');
+    if (backend == null) {
+      log.warn(_logTag, 'send() aborted — no model loaded');
+      throw StateError('No model loaded');
+    }
+    log.debug(_logTag, 'backend=${backend.runtimeType} isLoaded=${backend.isLoaded}');
 
     final convRepo = ref.read(conversationRepositoryProvider);
     final msgRepo = ref.read(messageRepositoryProvider);
@@ -88,19 +99,27 @@ class ChatNotifier extends _$ChatNotifier {
     ));
 
     // Build RAG context if enabled for this conversation
+    final ragEnabled = conversation?.ragEnabled ?? false;
+    log.debug(_logTag,
+        'ragEnabled=$ragEnabled historyMessages=${current.messages.length}');
     List<DocumentChunk> ragChunks = const [];
-    if (conversation?.ragEnabled ?? false) {
+    if (ragEnabled) {
       final embService = ref.read(embeddingServiceProvider).valueOrNull;
       if (embService != null && embService.isInitialized) {
         try {
+          log.debug(_logTag, 'RAG: embedding query');
           final queryVec = await embService.embedQuery(userMsg.content);
           final topK = ref.read(settingsNotifierProvider).topK;
           ragChunks = ref
               .read(documentChunkRepositoryProvider)
               .findSimilar(queryVec, topK: topK);
-        } catch (_) {
+          log.debug(_logTag, 'RAG: retrieved ${ragChunks.length} chunks');
+        } catch (e, st) {
           // RAG retrieval failure is non-fatal — continue without context
+          log.warn(_logTag, 'RAG retrieval failed (continuing): $e\n$st');
         }
+      } else {
+        log.debug(_logTag, 'RAG: embedding service unavailable, skipping');
       }
     }
 
@@ -111,21 +130,38 @@ class ChatNotifier extends _$ChatNotifier {
       systemPrompt,
       ragChunks,
     );
+    // ~4 chars/token is a rough heuristic for spotting context-window issues.
+    log.info(_logTag,
+        'prompt built: ${prompt.length} chars (~${(prompt.length / 4).round()} tokens est)');
 
     // Stream tokens (60-second timeout resets after each token)
     final buffer = StringBuffer();
+    var tokenCount = 0;
     _tokenSub?.cancel();
+
+    // Flush logs to disk BEFORE entering native inference — a native crash
+    // aborts the process and Dart cannot catch it, but bytes already flushed
+    // survive, so the last line tells us we reached the native call.
+    log.info(_logTag, 'invoking native generate()');
+    await log.flush();
+
     _tokenSub = backend
         .generate(prompt)
         .timeout(const Duration(seconds: 60))
         .listen(
       (token) {
+        if (tokenCount == 0) {
+          log.info(_logTag, 'first token received');
+        }
+        tokenCount++;
         buffer.write(token);
         state = AsyncData(
           state.requireValue.copyWith(streamingText: buffer.toString()),
         );
       },
       onDone: () {
+        log.info(_logTag,
+            'generation done: $tokenCount tokens, ${buffer.length} chars');
         final assistantMs = DateTime.now().millisecondsSinceEpoch;
         final assistantMsg = Message(
           id: 'msg-$assistantMs',
@@ -148,6 +184,8 @@ class ChatNotifier extends _$ChatNotifier {
         ));
       },
       onError: (Object e, StackTrace st) {
+        AppLogger.instance
+            .error(_logTag, 'generation error after $tokenCount tokens', e, st);
         state = AsyncError(e, st);
       },
       cancelOnError: true,
