@@ -183,9 +183,22 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   itemBuilder: (context, index) {
                     // Streaming bubble at end
                     if (index == messages.length && streamingText != null) {
+                      // Before the first token arrives, show an animated
+                      // "thinking" indicator so the user knows the model is
+                      // working (time-to-first-token can be significant).
+                      if (streamingText.isEmpty) {
+                        return _MessageBubble(
+                          isUser: false,
+                          isStreaming: true,
+                          child: _TypingIndicator(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSecondaryContainer,
+                          ),
+                        );
+                      }
                       return _MessageBubble(
-                        content:
-                            streamingText.isEmpty ? '▌' : '$streamingText▌',
+                        content: '$streamingText▌',
                         isUser: false,
                         isStreaming: true,
                       );
@@ -271,12 +284,19 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
-    required this.content,
+    this.content,
+    this.child,
     required this.isUser,
     required this.isStreaming,
-  });
+  }) : assert(content != null || child != null,
+            'Provide either content or child');
 
-  final String content;
+  /// Text to render. Ignored when [child] is supplied.
+  final String? content;
+
+  /// Custom bubble body (e.g. the typing indicator). Takes precedence
+  /// over [content].
+  final Widget? child;
   final bool isUser;
   final bool isStreaming;
 
@@ -302,15 +322,90 @@ class _MessageBubble extends StatelessWidget {
             bottomRight: Radius.circular(isUser ? 4 : 16),
           ),
         ),
-        child: Text(
-          content,
-          style: TextStyle(
-            color: isUser
-                ? colorScheme.onPrimaryContainer
-                : colorScheme.onSecondaryContainer,
-            fontStyle: isStreaming ? FontStyle.italic : FontStyle.normal,
-          ),
-        ),
+        child: child ??
+            Text(
+              content!,
+              style: TextStyle(
+                color: isUser
+                    ? colorScheme.onPrimaryContainer
+                    : colorScheme.onSecondaryContainer,
+                fontStyle: isStreaming ? FontStyle.italic : FontStyle.normal,
+              ),
+            ),
+      ),
+    );
+  }
+}
+
+/// Animated "model is thinking" indicator: three dots that pulse in sequence.
+///
+/// Shown in the assistant bubble during the gap between sending a prompt and
+/// the first streamed token, so the UI never looks frozen.
+class _TypingIndicator extends StatefulWidget {
+  const _TypingIndicator({required this.color});
+
+  final Color color;
+
+  @override
+  State<_TypingIndicator> createState() => _TypingIndicatorState();
+}
+
+class _TypingIndicatorState extends State<_TypingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  static const _dotCount = 3;
+  static const _dotSize = 7.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose(); // MUST be last
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _dotSize * 2,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(_dotCount, (i) {
+              // Stagger each dot's phase so the pulse travels left-to-right.
+              final phase = (_controller.value - i * 0.18) % 1.0;
+              // Triangle wave: 0 -> 1 -> 0 across the phase.
+              final wave = (1 - (2 * phase - 1).abs()).clamp(0.0, 1.0);
+              return Padding(
+                padding: EdgeInsets.only(right: i < _dotCount - 1 ? 5 : 0),
+                child: Transform.translate(
+                  offset: Offset(0, -3 * wave),
+                  child: Opacity(
+                    opacity: 0.35 + 0.65 * wave,
+                    child: Container(
+                      width: _dotSize,
+                      height: _dotSize,
+                      decoration: BoxDecoration(
+                        color: widget.color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          );
+        },
       ),
     );
   }
