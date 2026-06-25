@@ -45,6 +45,29 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) => notifier.setTopK(v.round()),
           ),
           const Divider(height: 32),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.input),
+            title: const Text('Model I/O logging'),
+            subtitle: const Text(
+              'Record full prompt + response for each generation',
+            ),
+            value: settings.modelIoLoggingEnabled,
+            onChanged: notifier.setModelIoLoggingEnabled,
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.compare_arrows),
+            title: const Text('Model I/O log'),
+            subtitle: Text(
+              settings.modelIoLoggingEnabled
+                  ? 'View recorded model inputs & outputs'
+                  : 'Enable logging above to record traces',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/model-io'),
+          ),
+          const Divider(height: 32),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.bug_report_outlined),

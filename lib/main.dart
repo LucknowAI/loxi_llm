@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/database/objectbox_store.dart';
 import 'core/logging/app_logger.dart';
+import 'core/logging/model_io_logger.dart';
 import 'core/providers/objectbox_provider.dart';
 import 'core/providers/shared_preferences_provider.dart';
 import 'core/router/app_router.dart';
@@ -16,6 +17,7 @@ void main() async {
     WidgetsFlutterBinding.ensureInitialized();
 
     await AppLogger.instance.init();
+    await ModelIoLogger.instance.init();
 
     // Route Flutter framework errors into our logger as well.
     final previousOnError = FlutterError.onError;

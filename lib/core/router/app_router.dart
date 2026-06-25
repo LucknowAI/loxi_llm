@@ -9,6 +9,7 @@ import '../../features/models/presentation/models_screen.dart';
 import '../../features/onboarding/presentation/onboarding_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../logging/log_viewer_screen.dart';
+import '../logging/model_io_log_screen.dart';
 import '../providers/shared_preferences_provider.dart';
 
 part 'app_router.g.dart';
@@ -32,6 +33,10 @@ GoRouter appRouter(Ref ref) {
       GoRoute(
         path: '/logs',
         builder: (context, state) => const LogViewerScreen(),
+      ),
+      GoRoute(
+        path: '/model-io',
+        builder: (context, state) => const ModelIoLogScreen(),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>

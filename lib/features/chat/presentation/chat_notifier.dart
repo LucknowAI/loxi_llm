@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/logging/app_logger.dart';
+import '../../../core/logging/model_io_logger.dart';
+import '../../../core/logging/model_io_trace.dart';
 import '../../../core/providers/embedding_provider.dart';
 import '../../../core/providers/inference_provider.dart';
+import '../../../features/models/data/model_repository.dart';
+import '../../../features/models/domain/model_status.dart';
 import '../data/conversation_repository.dart';
 import '../data/message_repository.dart';
 import '../domain/message.dart';
@@ -139,6 +143,43 @@ class ChatNotifier extends _$ChatNotifier {
     var tokenCount = 0;
     _tokenSub?.cancel();
 
+    // Model I/O trace capture — only when the setting is enabled (zero cost
+    // otherwise). Reading the setting also syncs ModelIoLogger.enabled.
+    // Snapshot the inputs now; metrics are filled in as we stream.
+    final ioLogger = ModelIoLogger.instance;
+    final captureIo =
+        ref.read(settingsNotifierProvider).modelIoLoggingEnabled;
+    final genStartMs = DateTime.now().millisecondsSinceEpoch;
+    int? firstTokenMs;
+    String modelName = 'unknown';
+    if (captureIo) {
+      final loaded = ref
+          .read(modelRepositoryProvider)
+          .getAll()
+          .where((m) => m.status == ModelStatus.loaded);
+      if (loaded.isNotEmpty) modelName = loaded.first.name;
+    }
+
+    void recordIo(TraceOutcome outcome, {String? error}) {
+      if (!captureIo) return;
+      ioLogger.record(ModelIoTrace(
+        timestampMs: genStartMs,
+        conversationId: conversationId,
+        modelName: modelName,
+        backendType: backend.runtimeType.toString(),
+        inputPrompt: prompt,
+        generationParams: backend.generationParams,
+        ragEnabled: ragEnabled,
+        ragChunks: ragChunks.map((c) => c.content).toList(),
+        outputText: buffer.toString(),
+        tokenCount: tokenCount,
+        timeToFirstTokenMs: firstTokenMs,
+        totalDurationMs: DateTime.now().millisecondsSinceEpoch - genStartMs,
+        outcome: outcome,
+        error: error,
+      ));
+    }
+
     // Flush logs to disk BEFORE entering native inference — a native crash
     // aborts the process and Dart cannot catch it, but bytes already flushed
     // survive, so the last line tells us we reached the native call.
@@ -152,6 +193,7 @@ class ChatNotifier extends _$ChatNotifier {
       (token) {
         if (tokenCount == 0) {
           log.info(_logTag, 'first token received');
+          firstTokenMs = DateTime.now().millisecondsSinceEpoch - genStartMs;
         }
         tokenCount++;
         buffer.write(token);
@@ -162,6 +204,7 @@ class ChatNotifier extends _$ChatNotifier {
       onDone: () {
         log.info(_logTag,
             'generation done: $tokenCount tokens, ${buffer.length} chars');
+        recordIo(TraceOutcome.done);
         final assistantMs = DateTime.now().millisecondsSinceEpoch;
         final assistantMsg = Message(
           id: 'msg-$assistantMs',
@@ -186,6 +229,10 @@ class ChatNotifier extends _$ChatNotifier {
       onError: (Object e, StackTrace st) {
         AppLogger.instance
             .error(_logTag, 'generation error after $tokenCount tokens', e, st);
+        recordIo(
+          e is TimeoutException ? TraceOutcome.timeout : TraceOutcome.error,
+          error: e.toString(),
+        );
         state = AsyncError(e, st);
       },
       cancelOnError: true,

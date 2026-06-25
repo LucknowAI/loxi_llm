@@ -15,6 +15,10 @@ base class InferenceBackend {
 
   bool get isLoaded => throw UnimplementedError('isLoaded not implemented');
 
+  /// Generation parameters this backend applies (temperature, maxTokens, ...).
+  /// Reported for diagnostics/model-I/O logging; defaults to empty.
+  Map<String, Object?> get generationParams => const {};
+
   /// Stub for Phase 5 EmbeddingService — do not implement here.
   Future<List<double>> embeddings(String text) =>
       throw UnimplementedError('embeddings: use Phase 5 EmbeddingService');

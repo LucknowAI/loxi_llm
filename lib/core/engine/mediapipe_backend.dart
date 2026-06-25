@@ -11,8 +11,16 @@ final class MediaPipeBackend extends InferenceBackend {
   InferenceChat? _chat;
   bool _loaded = false;
 
+  // Configured at load time via getActiveModel(maxTokens: 1024).
+  static const int _maxTokens = 1024;
+
   @override
   bool get isLoaded => _loaded;
+
+  @override
+  Map<String, Object?> get generationParams => const {
+        'maxTokens': _maxTokens,
+      };
 
   @override
   Future<void> loadModel(String path) async {
@@ -22,7 +30,7 @@ final class MediaPipeBackend extends InferenceBackend {
       fileType: ModelFileType.task,
     ).fromFile(path).install();
 
-    _model = await FlutterGemma.getActiveModel(maxTokens: 1024);
+    _model = await FlutterGemma.getActiveModel(maxTokens: _maxTokens);
     _loaded = true;
   }
 

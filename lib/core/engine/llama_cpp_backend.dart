@@ -29,13 +29,30 @@ final class LlamaCppBackend extends InferenceBackend {
     }
   }
 
+  // Generation tuning — single source of truth so [generationParams] always
+  // matches what [generate] actually uses. topP/topK/repeatPenalty fall back to
+  // GenerationParams defaults (0.95 / 40 / 1.1).
+  static const int _maxTokens = 512;
+  static const double _temperature = 0.7;
+
+  @override
+  Map<String, Object?> get generationParams => const {
+        'maxTokens': _maxTokens,
+        'temperature': _temperature,
+        'topP': 0.95,
+        'topK': 40,
+        'repeatPenalty': 1.1,
+        'contextSize': 2048,
+        'batchSize': 512,
+      };
+
   @override
   Stream<String> generate(String prompt) {
     return _llama.generateStream(
       GenerationParams(
         prompt: prompt,
-        maxTokens: 512,
-        temperature: 0.7,
+        maxTokens: _maxTokens,
+        temperature: _temperature,
       ),
     );
   }
