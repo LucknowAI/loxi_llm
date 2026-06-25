@@ -6,7 +6,7 @@ part of 'inference_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$inferenceNotifierHash() => r'2e05ee824bc11575243728feea6f917c426a0614';
+String _$inferenceNotifierHash() => r'a7ff1b16c0e20bd208347a9bc06d773ac53c7111';
 
 /// Manages the lifecycle of the currently loaded [InferenceBackend].
 ///

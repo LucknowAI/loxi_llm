@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../../core/engine/chat_template.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/logging/model_io_logger.dart';
 import '../../../core/logging/model_io_trace.dart';
 import '../../../core/providers/embedding_provider.dart';
 import '../../../core/providers/inference_provider.dart';
-import '../../../features/models/data/model_repository.dart';
-import '../../../features/models/domain/model_status.dart';
 import '../data/conversation_repository.dart';
 import '../data/message_repository.dart';
 import '../domain/message.dart';
@@ -127,16 +126,29 @@ class ChatNotifier extends _$ChatNotifier {
       }
     }
 
-    // Build prompt from full history + system prompt + RAG context
+    // Resolve the model that will actually run this generation from the
+    // authoritative source — the model loaded into the backend. The persisted
+    // ModelStatus.loaded flag is unreliable (reset on startup reconciliation),
+    // and conversation.modelId is often empty. The chat template + stop
+    // sequences must match the running model. Precedence: loaded model →
+    // conversation.modelId → generic fallback.
+    final loadedModel = ref.read(inferenceNotifierProvider.notifier).loadedModel;
+    final modelName = loadedModel?.name ?? 'unknown';
+    final modelId = loadedModel?.id ?? (conversation?.modelId ?? '');
+    final template = ChatTemplate.forModelId(modelId);
+
+    // Build the prompt using the model's real chat template. RAG chunks fold
+    // into the last user turn (see ChatTemplate.format).
     final systemPrompt = conversation?.systemPrompt ?? '';
-    final prompt = _buildPrompt(
-      [...current.messages, userMsg],
+    final prompt = template.format(
+      _historyTurns([...current.messages, userMsg]),
       systemPrompt,
-      ragChunks,
+      ragContext: _buildRagContext(ragChunks),
     );
     // ~4 chars/token is a rough heuristic for spotting context-window issues.
     log.info(_logTag,
-        'prompt built: ${prompt.length} chars (~${(prompt.length / 4).round()} tokens est)');
+        'prompt built (${template.kind.name}): ${prompt.length} chars '
+        '(~${(prompt.length / 4).round()} tokens est)');
 
     // Stream tokens (60-second timeout resets after each token)
     final buffer = StringBuffer();
@@ -151,14 +163,6 @@ class ChatNotifier extends _$ChatNotifier {
         ref.read(settingsNotifierProvider).modelIoLoggingEnabled;
     final genStartMs = DateTime.now().millisecondsSinceEpoch;
     int? firstTokenMs;
-    String modelName = 'unknown';
-    if (captureIo) {
-      final loaded = ref
-          .read(modelRepositoryProvider)
-          .getAll()
-          .where((m) => m.status == ModelStatus.loaded);
-      if (loaded.isNotEmpty) modelName = loaded.first.name;
-    }
 
     void recordIo(TraceOutcome outcome, {String? error}) {
       if (!captureIo) return;
@@ -187,7 +191,7 @@ class ChatNotifier extends _$ChatNotifier {
     await log.flush();
 
     _tokenSub = backend
-        .generate(prompt)
+        .generate(prompt, stopSequences: template.stopSequences)
         .timeout(const Duration(seconds: 60))
         .listen(
       (token) {
@@ -245,34 +249,25 @@ class ChatNotifier extends _$ChatNotifier {
   /// this, but windowing here preserves the system prompt + RAG context).
   static const int _maxHistoryMessages = 20;
 
-  /// Build a simple chat prompt from history + system prompt + optional RAG context.
-  String _buildPrompt(
-    List<Message> history,
-    String systemPrompt, [
-    List<DocumentChunk> ragChunks = const [],
-  ]) {
-    // Keep only the most recent turns to bound prompt size.
-    final windowedHistory = history.length > _maxHistoryMessages
+  /// Map the most recent [history] messages to template turns, dropping older
+  /// turns so a long conversation never overflows the context window.
+  List<ChatTurn> _historyTurns(List<Message> history) {
+    final windowed = history.length > _maxHistoryMessages
         ? history.sublist(history.length - _maxHistoryMessages)
         : history;
+    return [for (final m in windowed) ChatTurn(m.role, m.content)];
+  }
 
+  /// Assemble retrieved RAG chunks into a labeled context block, or '' when
+  /// there are none. ChatTemplate folds this into the last user turn.
+  String _buildRagContext(List<DocumentChunk> ragChunks) {
+    if (ragChunks.isEmpty) return '';
     final buffer = StringBuffer();
-    if (systemPrompt.isNotEmpty) {
-      buffer.writeln(systemPrompt);
-      buffer.writeln();
+    buffer.writeln('Use the following context to answer the question:');
+    for (int i = 0; i < ragChunks.length; i++) {
+      buffer.write('[${i + 1}] ${ragChunks[i].content}');
+      if (i < ragChunks.length - 1) buffer.writeln();
     }
-    if (ragChunks.isNotEmpty) {
-      buffer.writeln('Use the following context to answer the question:');
-      for (int i = 0; i < ragChunks.length; i++) {
-        buffer.writeln('[${i + 1}] ${ragChunks[i].content}');
-      }
-      buffer.writeln();
-    }
-    for (final msg in windowedHistory) {
-      final prefix = msg.isUser ? 'Human: ' : 'Assistant: ';
-      buffer.writeln('$prefix${msg.content}');
-    }
-    buffer.write('Assistant: ');
     return buffer.toString();
   }
 }

@@ -94,6 +94,22 @@ void main() {
     });
   });
 
+  group('InferenceBackend.generate stopSequences', () {
+    test('carries stopSequences through to the implementation', () async {
+      final backend = _CapturingBackend();
+      await backend
+          .generate('hi', stopSequences: const ['<end_of_turn>'])
+          .toList();
+      expect(backend.lastStops, const ['<end_of_turn>']);
+    });
+
+    test('defaults stopSequences to empty when omitted', () async {
+      final backend = _CapturingBackend();
+      await backend.generate('hi').toList();
+      expect(backend.lastStops, isEmpty);
+    });
+  });
+
   group('InferenceNotifier initial state', () {
     test('build() returns AsyncData(null) — no model loaded at startup', () async {
       final container = ProviderContainer(
@@ -144,3 +160,15 @@ void main() {
 /// Minimal concrete subclass of InferenceBackend used to test
 /// that the base-class default methods throw [UnimplementedError].
 final class _StubBackend extends InferenceBackend {}
+
+/// Records the [stopSequences] passed to [generate] so the abstraction's
+/// contract can be asserted without touching native plugins.
+final class _CapturingBackend extends InferenceBackend {
+  List<String>? lastStops;
+
+  @override
+  Stream<String> generate(String prompt,
+      {List<String> stopSequences = const []}) async* {
+    lastStops = stopSequences;
+  }
+}

@@ -7,7 +7,12 @@ base class InferenceBackend {
   Future<void> loadModel(String path) =>
       throw UnimplementedError('loadModel not implemented');
 
-  Stream<String> generate(String prompt) =>
+  /// Stream the model's response to [prompt].
+  ///
+  /// [stopSequences] are strings at which generation should halt (the model's
+  /// turn terminators, supplied by the chat template). Backends that handle
+  /// stopping internally (e.g. MediaPipe) may ignore them.
+  Stream<String> generate(String prompt, {List<String> stopSequences = const []}) =>
       throw UnimplementedError('generate not implemented');
 
   Future<void> unloadModel() =>

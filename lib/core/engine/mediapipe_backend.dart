@@ -35,7 +35,10 @@ final class MediaPipeBackend extends InferenceBackend {
   }
 
   @override
-  Stream<String> generate(String prompt) async* {
+  Stream<String> generate(String prompt,
+      {List<String> stopSequences = const []}) async* {
+    // flutter_gemma applies the model's own template and stop handling, so
+    // [stopSequences] is intentionally ignored here.
     final model = _model;
     if (model == null) throw StateError('MediaPipeBackend: model not loaded');
 

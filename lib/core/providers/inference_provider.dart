@@ -17,6 +17,12 @@ part 'inference_provider.g.dart';
 /// keepAlive: true — the loaded backend must survive tab navigation.
 @Riverpod(keepAlive: true)
 class InferenceNotifier extends _$InferenceNotifier {
+  /// The model currently loaded into [state]'s backend, or null when none is
+  /// loaded. This is the authoritative source for "what model is running" —
+  /// the persisted [ModelStatus.loaded] flag is reset on startup reconciliation
+  /// and cannot be relied on (see ModelsNotifier). Set atomically with [state].
+  Model? loadedModel;
+
   @override
   Future<InferenceBackend?> build() async => null;
 
@@ -34,12 +40,14 @@ class InferenceNotifier extends _$InferenceNotifier {
     try {
       await backend.loadModel(model.localPath!);
       state = AsyncData(backend);
+      loadedModel = model;
       // Persist loaded status
       ref.read(modelRepositoryProvider).save(
             model.copyWith(status: ModelStatus.loaded),
           );
     } catch (e, st) {
       state = AsyncError(e, st);
+      loadedModel = null;
       ref.read(modelRepositoryProvider).save(
             model.copyWith(status: ModelStatus.error),
           );
@@ -58,6 +66,7 @@ class InferenceNotifier extends _$InferenceNotifier {
       await current.unloadModel();
     }
     state = const AsyncData(null);
+    loadedModel = null;
     ref.read(modelRepositoryProvider).save(
           model.copyWith(status: ModelStatus.downloaded),
         );
