@@ -92,6 +92,11 @@ void main() {
         throwsA(isA<UnimplementedError>()),
       );
     });
+
+    test('default stop() is a no-op (does not throw)', () {
+      final backend = _StubBackend();
+      expect(backend.stop(), completes);
+    });
   });
 
   group('InferenceBackend.generate stopSequences', () {
@@ -161,14 +166,20 @@ void main() {
 /// that the base-class default methods throw [UnimplementedError].
 final class _StubBackend extends InferenceBackend {}
 
-/// Records the [stopSequences] passed to [generate] so the abstraction's
-/// contract can be asserted without touching native plugins.
+/// Records the [stopSequences] passed to [generate] and whether [stop] was
+/// called, so the abstraction's contract can be asserted without native plugins.
 final class _CapturingBackend extends InferenceBackend {
   List<String>? lastStops;
+  bool stopCalled = false;
 
   @override
   Stream<String> generate(String prompt,
       {List<String> stopSequences = const []}) async* {
     lastStops = stopSequences;
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalled = true;
   }
 }

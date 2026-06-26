@@ -135,6 +135,7 @@ class _TraceTile extends StatelessWidget {
       TraceOutcome.done => (icon: Icons.check_circle, color: Colors.green),
       TraceOutcome.error => (icon: Icons.error, color: scheme.error),
       TraceOutcome.timeout => (icon: Icons.timer_off, color: Colors.orange),
+      TraceOutcome.stopped => (icon: Icons.stop_circle, color: scheme.outline),
     };
   }
 

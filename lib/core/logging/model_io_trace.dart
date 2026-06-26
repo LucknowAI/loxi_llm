@@ -1,18 +1,20 @@
 import 'dart:convert';
 
 /// How a generation finished.
-enum TraceOutcome { done, error, timeout }
+enum TraceOutcome { done, error, timeout, stopped }
 
 extension TraceOutcomeLabel on TraceOutcome {
   String get label => switch (this) {
         TraceOutcome.done => 'done',
         TraceOutcome.error => 'error',
         TraceOutcome.timeout => 'timeout',
+        TraceOutcome.stopped => 'stopped',
       };
 
   static TraceOutcome parse(String? value) => switch (value) {
         'error' => TraceOutcome.error,
         'timeout' => TraceOutcome.timeout,
+        'stopped' => TraceOutcome.stopped,
         _ => TraceOutcome.done,
       };
 }

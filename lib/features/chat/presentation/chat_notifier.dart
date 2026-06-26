@@ -45,6 +45,10 @@ class ChatState {
 class ChatNotifier extends _$ChatNotifier {
   StreamSubscription<String>? _tokenSub;
 
+  /// True between a user Stop request and the stream actually ending, so the
+  /// trace can be tagged [TraceOutcome.stopped] rather than `done`.
+  bool _stopRequested = false;
+
   @override
   Future<ChatState> build(String conversationId) async {
     ref.onDispose(() => _tokenSub?.cancel());
@@ -59,6 +63,7 @@ class ChatNotifier extends _$ChatNotifier {
   Future<void> send(String userText) async {
     final log = AppLogger.instance;
     if (userText.trim().isEmpty) return;
+    _stopRequested = false;
 
     log.info(_logTag,
         'send() conversation=$conversationId userTextLen=${userText.trim().length}');
@@ -207,8 +212,9 @@ class ChatNotifier extends _$ChatNotifier {
       },
       onDone: () {
         log.info(_logTag,
-            'generation done: $tokenCount tokens, ${buffer.length} chars');
-        recordIo(TraceOutcome.done);
+            'generation ${_stopRequested ? 'stopped' : 'done'}: '
+            '$tokenCount tokens, ${buffer.length} chars');
+        recordIo(_stopRequested ? TraceOutcome.stopped : TraceOutcome.done);
         final assistantMs = DateTime.now().millisecondsSinceEpoch;
         final assistantMsg = Message(
           id: 'msg-$assistantMs',
@@ -248,6 +254,16 @@ class ChatNotifier extends _$ChatNotifier {
   /// the model's context window (the native backend hard-truncates beyond
   /// this, but windowing here preserves the system prompt + RAG context).
   static const int _maxHistoryMessages = 20;
+
+  /// Stop the in-flight generation. The partial reply already streamed is kept
+  /// (the stream's onDone saves it). No-op when nothing is streaming.
+  Future<void> stop() async {
+    if (!(state.valueOrNull?.isStreaming ?? false)) return;
+    _stopRequested = true;
+    AppLogger.instance.info(_logTag, 'stop() requested');
+    final backend = ref.read(inferenceNotifierProvider).valueOrNull;
+    await backend?.stop();
+  }
 
   /// Map the most recent [history] messages to template turns, dropping older
   /// turns so a long conversation never overflows the context window.

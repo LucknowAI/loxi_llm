@@ -124,6 +124,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final isRagEnabled = currentConv?.ragEnabled ?? false;
 
     final isModelLoaded = backendAsync.valueOrNull != null;
+    final isStreaming = chatAsync.valueOrNull?.isStreaming ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -269,10 +270,22 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton.filled(
-                  icon: const Icon(Icons.send),
-                  onPressed: isModelLoaded ? _sendMessage : null,
-                ),
+                // While streaming, the Send button becomes a Stop button that
+                // halts generation and keeps the partial reply.
+                if (isStreaming)
+                  IconButton.filled(
+                    icon: const Icon(Icons.stop),
+                    tooltip: 'Stop generating',
+                    onPressed: () => ref
+                        .read(chatNotifierProvider(widget.conversationId)
+                            .notifier)
+                        .stop(),
+                  )
+                else
+                  IconButton.filled(
+                    icon: const Icon(Icons.send),
+                    onPressed: isModelLoaded ? _sendMessage : null,
+                  ),
               ],
             ),
           ),

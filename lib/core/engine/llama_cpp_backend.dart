@@ -60,6 +60,11 @@ final class LlamaCppBackend extends InferenceBackend {
   }
 
   @override
+  Future<void> stop() async {
+    await _llama.stopGeneration();
+  }
+
+  @override
   Future<void> unloadModel() async {
     await _llama.unloadModel();
   }

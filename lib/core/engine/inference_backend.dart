@@ -18,6 +18,11 @@ base class InferenceBackend {
   Future<void> unloadModel() =>
       throw UnimplementedError('unloadModel not implemented');
 
+  /// Request that an in-flight [generate] stop as soon as possible. The partial
+  /// output already streamed is kept. Default is a no-op for backends that
+  /// cannot be interrupted.
+  Future<void> stop() async {}
+
   bool get isLoaded => throw UnimplementedError('isLoaded not implemented');
 
   /// Generation parameters this backend applies (temperature, maxTokens, ...).

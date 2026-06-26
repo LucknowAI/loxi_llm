@@ -54,6 +54,11 @@ final class MediaPipeBackend extends InferenceBackend {
   }
 
   @override
+  Future<void> stop() async {
+    await _chat?.stopGeneration();
+  }
+
+  @override
   Future<void> unloadModel() async {
     await _chat?.stopGeneration();
     _chat = null;
