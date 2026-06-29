@@ -12,6 +12,10 @@ part 'models_notifier.g.dart';
 
 @riverpod
 class ModelsNotifier extends _$ModelsNotifier {
+  /// Transient live download speed in bytes/second, keyed by model id. Not
+  /// persisted — only valid while a download is active.
+  final Map<String, double> downloadSpeed = {};
+
   @override
   Future<List<Model>> build() async {
     final repo = ref.watch(modelRepositoryProvider);
@@ -61,9 +65,10 @@ class ModelsNotifier extends _$ModelsNotifier {
       final savePath = await service.downloadModel(
         model: model,
         downloadUrl: url,
-        onProgress: (progress) {
+        onProgress: (progress, bytesPerSecond) {
           final current = repo.getById(modelId);
           if (current != null) {
+            downloadSpeed[modelId] = bytesPerSecond;
             repo.save(current.copyWith(downloadProgress: progress));
             ref.invalidateSelf();
           }
@@ -84,6 +89,7 @@ class ModelsNotifier extends _$ModelsNotifier {
         repo.save(current.copyWith(status: ModelStatus.error));
       }
     } finally {
+      downloadSpeed.remove(modelId);
       ref.invalidateSelf();
     }
   }
@@ -92,6 +98,7 @@ class ModelsNotifier extends _$ModelsNotifier {
   void cancelDownload(String modelId) {
     final service = ref.read(downloadServiceProvider);
     service.cancelDownload(modelId);
+    downloadSpeed.remove(modelId);
     final repo = ref.read(modelRepositoryProvider);
     final model = repo.getById(modelId);
     if (model != null) {

@@ -59,11 +59,16 @@ class _ModelListTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Live download speed (bytes/sec) for this model, if downloading. The
+    // parent watches modelsNotifierProvider, so this rebuilds as it updates.
+    final speed = model.status == ModelStatus.downloading
+        ? ref.read(modelsNotifierProvider.notifier).downloadSpeed[model.id]
+        : null;
     return Column(
       children: [
         ListTile(
           title: Text(model.name),
-          subtitle: _subtitle(),
+          subtitle: _subtitle(speed),
           trailing: _trailingWidget(context, ref),
         ),
         if (model.status == ModelStatus.downloading)
@@ -75,10 +80,24 @@ class _ModelListTile extends ConsumerWidget {
     );
   }
 
-  Widget _subtitle() {
+  /// Format a download speed in bytes/second as e.g. "3.4 MB/s" or "812 KB/s".
+  static String _formatSpeed(double bytesPerSecond) {
+    if (bytesPerSecond >= 1024 * 1024) {
+      return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    }
+    if (bytesPerSecond >= 1024) {
+      return '${(bytesPerSecond / 1024).toStringAsFixed(0)} KB/s';
+    }
+    return '${bytesPerSecond.toStringAsFixed(0)} B/s';
+  }
+
+  Widget _subtitle(double? speed) {
     final badge = model.recommendationBadge;
+    final speedSuffix = (speed != null && speed > 0)
+        ? ' · ${_formatSpeed(speed)}'
+        : '';
     final statusText = model.status == ModelStatus.downloading
-        ? '${model.sizeLabel} — ${(model.downloadProgress * 100).toStringAsFixed(0)}%'
+        ? '${model.sizeLabel} — ${(model.downloadProgress * 100).toStringAsFixed(0)}%$speedSuffix'
         : '${model.sizeLabel} — ${model.status.name}';
     if (badge == null) return Text(statusText);
     return Column(

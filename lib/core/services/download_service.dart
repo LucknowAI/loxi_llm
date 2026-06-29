@@ -18,12 +18,13 @@ class DownloadService {
   /// Download [model] from HuggingFace to the app documents directory.
   ///
   /// [downloadUrl] must be a direct CDN URL (use [huggingFaceDownloadUrl]).
-  /// [onProgress] receives values in [0.0, 1.0].
+  /// [onProgress] receives the fraction in [0.0, 1.0] and a smoothed download
+  /// speed in bytes/second (0 until the first sample window elapses).
   /// Throws [DioException] on network errors; check [CancelToken.isCancel] for user cancels.
   Future<String> downloadModel({
     required Model model,
     required String downloadUrl,
-    required void Function(double progress) onProgress,
+    required void Function(double progress, double bytesPerSecond) onProgress,
     String? hfToken,
   }) async {
     final savePath = await _storage.getModelPath(model.filename!);
@@ -32,6 +33,12 @@ class DownloadService {
 
     final cancelToken = CancelToken();
     _tokens[model.id] = cancelToken;
+
+    // Speed is sampled over ~500ms windows and exponentially smoothed so the
+    // displayed value is steady rather than jumping on every progress event.
+    var lastTime = DateTime.now();
+    var lastReceived = existingBytes;
+    var bytesPerSecond = 0.0;
 
     try {
       final headers = <String, dynamic>{};
@@ -50,7 +57,19 @@ class DownloadService {
           if (total <= 0) return; // server sent no Content-Length
           final totalEffective = total + existingBytes;
           final receivedEffective = received + existingBytes;
-          onProgress(receivedEffective / totalEffective);
+
+          final now = DateTime.now();
+          final elapsedMs = now.difference(lastTime).inMilliseconds;
+          if (elapsedMs >= 500) {
+            final instant =
+                (receivedEffective - lastReceived) / (elapsedMs / 1000.0);
+            bytesPerSecond = bytesPerSecond == 0
+                ? instant
+                : bytesPerSecond * 0.6 + instant * 0.4;
+            lastTime = now;
+            lastReceived = receivedEffective;
+          }
+          onProgress(receivedEffective / totalEffective, bytesPerSecond);
         },
       );
       return savePath;
