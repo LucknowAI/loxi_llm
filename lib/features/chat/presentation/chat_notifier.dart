@@ -279,9 +279,9 @@ class ChatNotifier extends _$ChatNotifier {
   }
 
   /// Run one tool-calling agent turn over [history] (the user message is the
-  /// last entry). Generations are collected to completion (not streamed) so
-  /// tool calls can be detected; the final answer is saved as the assistant
-  /// message. A status label shows while a tool runs.
+  /// last entry). Each generation is peeked: tool-call generations are buffered
+  /// silently while a "Using <tool>…" status shows, and the final answer streams
+  /// token-by-token, then is saved as the assistant message.
   Future<void> _runAgentTurn(List<Message> history) async {
     final log = AppLogger.instance;
     final backend = ref.read(inferenceNotifierProvider).valueOrNull;
@@ -320,8 +320,9 @@ class ChatNotifier extends _$ChatNotifier {
 
     final captureIo = ref.read(settingsNotifierProvider).modelIoLoggingEnabled;
 
-    // One model call: format the turns, run to completion, return full text.
-    Future<String> generate(List<ChatTurn> turns) async {
+    // One model call, streamed: format the turns, yield tokens, and record a
+    // trace when the generation completes.
+    Stream<String> generateStream(List<ChatTurn> turns) async* {
       final prompt = template.format(turns, systemPrompt);
       log.info(_logTag,
           'agent generate (${template.kind.name}): ${prompt.length} chars');
@@ -334,6 +335,7 @@ class ChatNotifier extends _$ChatNotifier {
           .timeout(const Duration(seconds: 120))) {
         buffer.write(token);
         tokens++;
+        yield token;
       }
       if (captureIo) {
         ModelIoLogger.instance.record(ModelIoTrace(
@@ -352,16 +354,25 @@ class ChatNotifier extends _$ChatNotifier {
           outcome: TraceOutcome.done,
         ));
       }
-      return buffer.toString();
     }
 
+    // Accumulates the streamed final answer so the UI shows it live.
+    final answerBuffer = StringBuffer();
     final loop = AgentLoop(
-      generate: generate,
+      generateStream: generateStream,
       registry: registry,
       onToolCall: (toolName) {
         if (state.valueOrNull != null) {
           state = AsyncData(
             state.requireValue.copyWith(streamingText: 'Using $toolName…'),
+          );
+        }
+      },
+      onAnswerToken: (token) {
+        answerBuffer.write(token);
+        if (state.valueOrNull != null) {
+          state = AsyncData(
+            state.requireValue.copyWith(streamingText: answerBuffer.toString()),
           );
         }
       },

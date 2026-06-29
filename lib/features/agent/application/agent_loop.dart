@@ -38,34 +38,68 @@ class AgentResult {
 /// completion), so the loop is backend-agnostic and unit-testable with a fake.
 class AgentLoop {
   AgentLoop({
-    required this.generate,
+    required this.generateStream,
     required this.registry,
     this.maxIterations = 5,
     this.onToolCall,
+    this.onAnswerToken,
   });
 
-  final Future<String> Function(List<ChatTurn> turns) generate;
+  /// Streams one model generation for the given turns (formatted by the caller).
+  final Stream<String> Function(List<ChatTurn> turns) generateStream;
   final ToolRegistry registry;
   final int maxIterations;
 
   /// Called with the tool name just before each tool runs (for UI status).
   final void Function(String toolName)? onToolCall;
 
+  /// Called with each token of the final answer as it streams to the UI.
+  final void Function(String token)? onAnswerToken;
+
   Future<AgentResult> run(List<ChatTurn> initialTurns) async {
     final turns = [...initialTurns];
     final steps = <AgentStep>[];
 
     for (var i = 0; i < maxIterations; i++) {
-      final output = await generate(turns);
-      final call = parseToolCall(output);
+      // Consume one generation, peeking at the start to decide whether it is a
+      // tool call (buffer silently) or the final answer (stream it).
+      final buffer = StringBuffer();
+      var decided = false;
+      var answerMode = false;
 
-      // No tool call → this is the final answer.
-      if (call == null) {
+      await for (final token in generateStream(turns)) {
+        buffer.write(token);
+        if (!decided) {
+          final trimmed = buffer.toString().trimLeft();
+          if (trimmed.isEmpty) continue; // only whitespace so far
+          decided = true;
+          final first = trimmed[0];
+          answerMode = first != '`' && first != '{';
+          if (answerMode) onAnswerToken?.call(trimmed);
+        } else if (answerMode) {
+          onAnswerToken?.call(token);
+        }
+        // Tool mode: keep buffering silently.
+      }
+
+      final output = buffer.toString();
+
+      // Answer mode → the final answer already streamed.
+      if (answerMode) {
         return AgentResult(
           answer: output.trim(),
           steps: steps,
           hitIterationCap: false,
         );
+      }
+
+      // Tool mode (or empty): parse the tool call. If it does not parse, it was
+      // not really a tool call — surface the withheld text as the answer.
+      final call = parseToolCall(output);
+      if (call == null) {
+        final answer = output.trim();
+        onAnswerToken?.call(answer);
+        return AgentResult(answer: answer, steps: steps, hitIterationCap: false);
       }
 
       // Execute the tool (never throws by contract).
@@ -92,11 +126,9 @@ class AgentLoop {
 
     // Cap reached: the model kept calling tools. Return a best-effort answer.
     final lastObservation = steps.isNotEmpty ? steps.last.observation : null;
-    return AgentResult(
-      answer: 'I could not finish within $maxIterations steps.'
-          '${lastObservation != null ? '\n\nLast result: $lastObservation' : ''}',
-      steps: steps,
-      hitIterationCap: true,
-    );
+    final answer = 'I could not finish within $maxIterations steps.'
+        '${lastObservation != null ? '\n\nLast result: $lastObservation' : ''}';
+    onAnswerToken?.call(answer);
+    return AgentResult(answer: answer, steps: steps, hitIterationCap: true);
   }
 }
