@@ -102,7 +102,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(2, 3397758933175363016),
     name: 'ConversationEntity',
-    lastPropertyId: const obx_int.IdUid(8, 1271113386738123098),
+    lastPropertyId: const obx_int.IdUid(9, 7916070707912456733),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -150,6 +150,12 @@ final _entities = <obx_int.ModelEntity>[
       obx_int.ModelProperty(
         id: const obx_int.IdUid(8, 1271113386738123098),
         name: 'ragEnabled',
+        type: 1,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(9, 7916070707912456733),
+        name: 'toolsEnabled',
         type: 1,
         flags: 0,
       ),
@@ -458,7 +464,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final titleOffset = fbb.writeString(object.title);
         final systemPromptOffset = fbb.writeString(object.systemPrompt);
         final modelIdOffset = fbb.writeString(object.modelId);
-        fbb.startTable(9);
+        fbb.startTable(10);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, conversationIdOffset);
         fbb.addOffset(2, titleOffset);
@@ -467,6 +473,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addInt64(5, object.createdAtMs);
         fbb.addInt64(6, object.updatedAtMs);
         fbb.addBool(7, object.ragEnabled);
+        fbb.addBool(8, object.toolsEnabled);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -504,6 +511,12 @@ obx_int.ModelDefinition getObjectBoxModel() {
             buffer,
             rootOffset,
             18,
+            false,
+          )
+          ..toolsEnabled = const fb.BoolReader().vTableGet(
+            buffer,
+            rootOffset,
+            20,
             false,
           );
 
@@ -778,6 +791,11 @@ class ConversationEntity_ {
   /// See [ConversationEntity.ragEnabled].
   static final ragEnabled = obx.QueryBooleanProperty<ConversationEntity>(
     _entities[1].properties[7],
+  );
+
+  /// See [ConversationEntity.toolsEnabled].
+  static final toolsEnabled = obx.QueryBooleanProperty<ConversationEntity>(
+    _entities[1].properties[8],
   );
 }
 

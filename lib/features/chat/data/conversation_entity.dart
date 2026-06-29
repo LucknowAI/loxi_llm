@@ -26,5 +26,8 @@ class ConversationEntity {
   @Property()
   bool ragEnabled = false;
 
+  @Property()
+  bool toolsEnabled = false;
+
   ConversationEntity();
 }

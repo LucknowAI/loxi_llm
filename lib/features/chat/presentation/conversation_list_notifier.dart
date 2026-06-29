@@ -56,6 +56,14 @@ class ConversationListNotifier extends _$ConversationListNotifier {
     ref.invalidateSelf();
   }
 
+  void toggleToolsEnabled(String conversationId) {
+    final repo = ref.read(conversationRepositoryProvider);
+    final conversation = repo.getById(conversationId);
+    if (conversation == null) return;
+    repo.save(conversation.copyWith(toolsEnabled: !conversation.toolsEnabled));
+    ref.invalidateSelf();
+  }
+
   void deleteConversation(String conversationId) {
     ref.read(messageRepositoryProvider).deleteByConversationId(conversationId);
     ref.read(conversationRepositoryProvider).delete(conversationId);

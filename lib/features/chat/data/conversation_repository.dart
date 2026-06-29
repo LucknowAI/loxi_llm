@@ -64,6 +64,8 @@ class ConversationRepository {
         modelId: e.modelId,
         createdAtMs: e.createdAtMs,
         updatedAtMs: e.updatedAtMs,
+        ragEnabled: e.ragEnabled,
+        toolsEnabled: e.toolsEnabled,
       );
 
   void _updateEntity(ConversationEntity e, Conversation c) {
@@ -73,5 +75,7 @@ class ConversationRepository {
     e.modelId = c.modelId;
     e.createdAtMs = c.createdAtMs;
     e.updatedAtMs = c.updatedAtMs;
+    e.ragEnabled = c.ragEnabled;
+    e.toolsEnabled = c.toolsEnabled;
   }
 }

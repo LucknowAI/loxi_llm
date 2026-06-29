@@ -69,7 +69,7 @@
     },
     {
       "id": "2:3397758933175363016",
-      "lastPropertyId": "8:1271113386738123098",
+      "lastPropertyId": "9:7916070707912456733",
       "name": "ConversationEntity",
       "properties": [
         {
@@ -111,6 +111,11 @@
         {
           "id": "8:1271113386738123098",
           "name": "ragEnabled",
+          "type": 1
+        },
+        {
+          "id": "9:7916070707912456733",
+          "name": "toolsEnabled",
           "type": 1
         }
       ],

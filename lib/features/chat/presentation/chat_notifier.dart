@@ -6,6 +6,11 @@ import '../../../core/logging/model_io_logger.dart';
 import '../../../core/logging/model_io_trace.dart';
 import '../../../core/providers/embedding_provider.dart';
 import '../../../core/providers/inference_provider.dart';
+import '../../agent/application/agent_loop.dart';
+import '../../agent/data/tool_registry.dart';
+import '../../agent/tools/calculator_tool.dart';
+import '../../agent/tools/datetime_tool.dart';
+import '../../agent/tools/document_search_tool.dart';
 import '../data/conversation_repository.dart';
 import '../data/message_repository.dart';
 import '../domain/message.dart';
@@ -105,6 +110,14 @@ class ChatNotifier extends _$ChatNotifier {
       messages: [...current.messages, userMsg],
       streamingText: '',
     ));
+
+    // Tool-calling agent path (per-conversation toggle). When enabled, the
+    // model decides which tools to call; the auto-RAG/streaming path below is
+    // skipped. Plain chat is unchanged.
+    if (conversation?.toolsEnabled ?? false) {
+      await _runAgentTurn([...current.messages, userMsg]);
+      return;
+    }
 
     // Build RAG context if enabled for this conversation
     final ragEnabled = conversation?.ragEnabled ?? false;
@@ -263,6 +276,124 @@ class ChatNotifier extends _$ChatNotifier {
     AppLogger.instance.info(_logTag, 'stop() requested');
     final backend = ref.read(inferenceNotifierProvider).valueOrNull;
     await backend?.stop();
+  }
+
+  /// Run one tool-calling agent turn over [history] (the user message is the
+  /// last entry). Generations are collected to completion (not streamed) so
+  /// tool calls can be detected; the final answer is saved as the assistant
+  /// message. A status label shows while a tool runs.
+  Future<void> _runAgentTurn(List<Message> history) async {
+    final log = AppLogger.instance;
+    final backend = ref.read(inferenceNotifierProvider).valueOrNull;
+    if (backend == null) return;
+
+    final loadedModel = ref.read(inferenceNotifierProvider.notifier).loadedModel;
+    final modelName = loadedModel?.name ?? 'unknown';
+    final conversation = ref.read(conversationRepositoryProvider).getById(conversationId);
+    final modelId = loadedModel?.id ?? (conversation?.modelId ?? '');
+    final template = ChatTemplate.forModelId(modelId);
+
+    // Build the tool registry (dependencies injected as functions).
+    final embService = ref.read(embeddingServiceProvider).valueOrNull;
+    final chunkRepo = ref.read(documentChunkRepositoryProvider);
+    final topK = ref.read(settingsNotifierProvider).topK;
+    final registry = ToolRegistry([
+      CalculatorTool(),
+      DateTimeTool(),
+      DocumentSearchTool(
+        embed: (q) async {
+          if (embService == null || !embService.isInitialized) {
+            throw StateError('embedding service unavailable');
+          }
+          return embService.embedQuery(q);
+        },
+        search: (vec, k) => chunkRepo.findSimilar(vec, topK: k),
+        topK: topK,
+      ),
+    ]);
+
+    // Tool instructions go first in the system prompt, then any user prompt.
+    final systemPrompt = [
+      registry.promptDescription(),
+      if ((conversation?.systemPrompt ?? '').isNotEmpty) conversation!.systemPrompt,
+    ].join('\n\n');
+
+    final captureIo = ref.read(settingsNotifierProvider).modelIoLoggingEnabled;
+
+    // One model call: format the turns, run to completion, return full text.
+    Future<String> generate(List<ChatTurn> turns) async {
+      final prompt = template.format(turns, systemPrompt);
+      log.info(_logTag,
+          'agent generate (${template.kind.name}): ${prompt.length} chars');
+      await log.flush();
+      final startMs = DateTime.now().millisecondsSinceEpoch;
+      final buffer = StringBuffer();
+      var tokens = 0;
+      await for (final token in backend
+          .generate(prompt, stopSequences: template.stopSequences)
+          .timeout(const Duration(seconds: 120))) {
+        buffer.write(token);
+        tokens++;
+      }
+      if (captureIo) {
+        ModelIoLogger.instance.record(ModelIoTrace(
+          timestampMs: startMs,
+          conversationId: conversationId,
+          modelName: modelName,
+          backendType: backend.runtimeType.toString(),
+          inputPrompt: prompt,
+          generationParams: backend.generationParams,
+          ragEnabled: false,
+          ragChunks: const [],
+          outputText: buffer.toString(),
+          tokenCount: tokens,
+          timeToFirstTokenMs: null,
+          totalDurationMs: DateTime.now().millisecondsSinceEpoch - startMs,
+          outcome: TraceOutcome.done,
+        ));
+      }
+      return buffer.toString();
+    }
+
+    final loop = AgentLoop(
+      generate: generate,
+      registry: registry,
+      onToolCall: (toolName) {
+        if (state.valueOrNull != null) {
+          state = AsyncData(
+            state.requireValue.copyWith(streamingText: 'Using $toolName…'),
+          );
+        }
+      },
+    );
+
+    try {
+      final result = await loop.run(_historyTurns(history));
+      final assistantMs = DateTime.now().millisecondsSinceEpoch;
+      final assistantMsg = Message(
+        id: 'msg-$assistantMs',
+        conversationId: conversationId,
+        role: MessageRole.assistant,
+        content: result.answer,
+        createdAtMs: assistantMs,
+      );
+      ref.read(messageRepositoryProvider).save(assistantMsg);
+      final conv = ref.read(conversationRepositoryProvider).getById(conversationId);
+      if (conv != null) {
+        ref
+            .read(conversationRepositoryProvider)
+            .save(conv.copyWith(updatedAtMs: assistantMs));
+      }
+      state = AsyncData(state.requireValue.copyWith(
+        messages: [...state.requireValue.messages, assistantMsg],
+        clearStreaming: true,
+      ));
+      log.info(_logTag,
+          'agent done: ${result.steps.length} tool step(s), cap=${result.hitIterationCap}');
+    } catch (e, st) {
+      log.error(_logTag, 'agent loop failed', e, st);
+      state = AsyncError(e, st);
+    }
   }
 
   /// Map the most recent [history] messages to template turns, dropping older

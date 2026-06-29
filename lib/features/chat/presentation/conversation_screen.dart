@@ -122,6 +122,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         .where((c) => c.id == widget.conversationId)
         .firstOrNull;
     final isRagEnabled = currentConv?.ragEnabled ?? false;
+    final isToolsEnabled = currentConv?.toolsEnabled ?? false;
 
     final isModelLoaded = backendAsync.valueOrNull != null;
     final isStreaming = chatAsync.valueOrNull?.isStreaming ?? false;
@@ -144,6 +145,20 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             onPressed: () => ref
                 .read(conversationListNotifierProvider.notifier)
                 .toggleRagEnabled(widget.conversationId),
+          ),
+          IconButton(
+            icon: Icon(
+              isToolsEnabled ? Icons.build : Icons.build_outlined,
+              color: isToolsEnabled
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+            tooltip: isToolsEnabled
+                ? 'Tools on — tap to disable'
+                : 'Tools off — tap to enable',
+            onPressed: () => ref
+                .read(conversationListNotifierProvider.notifier)
+                .toggleToolsEnabled(widget.conversationId),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
