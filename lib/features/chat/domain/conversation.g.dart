@@ -16,6 +16,8 @@ _$ConversationImpl _$$ConversationImplFromJson(Map<String, dynamic> json) =>
       updatedAtMs: (json['updatedAtMs'] as num).toInt(),
       ragEnabled: json['ragEnabled'] as bool? ?? false,
       toolsEnabled: json['toolsEnabled'] as bool? ?? false,
+      summary: json['summary'] as String? ?? '',
+      summarizedCount: (json['summarizedCount'] as num?)?.toInt() ?? 0,
     );
 
 Map<String, dynamic> _$$ConversationImplToJson(_$ConversationImpl instance) =>
@@ -28,4 +30,6 @@ Map<String, dynamic> _$$ConversationImplToJson(_$ConversationImpl instance) =>
       'updatedAtMs': instance.updatedAtMs,
       'ragEnabled': instance.ragEnabled,
       'toolsEnabled': instance.toolsEnabled,
+      'summary': instance.summary,
+      'summarizedCount': instance.summarizedCount,
     };

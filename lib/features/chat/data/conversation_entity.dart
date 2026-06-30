@@ -29,5 +29,11 @@ class ConversationEntity {
   @Property()
   bool toolsEnabled = false;
 
+  @Property()
+  String summary = '';
+
+  @Property()
+  int summarizedCount = 0;
+
   ConversationEntity();
 }

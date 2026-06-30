@@ -11,6 +11,8 @@ import '../../agent/data/tool_registry.dart';
 import '../../agent/tools/calculator_tool.dart';
 import '../../agent/tools/datetime_tool.dart';
 import '../../agent/tools/document_search_tool.dart';
+import '../application/conversation_summarizer.dart';
+import '../application/prompt_builder.dart';
 import '../data/conversation_repository.dart';
 import '../data/message_repository.dart';
 import '../domain/message.dart';
@@ -111,11 +113,31 @@ class ChatNotifier extends _$ChatNotifier {
       streamingText: '',
     ));
 
+    // Resolve the running model + template once — used by summarization and by
+    // both the agent and streaming paths. The loaded model is authoritative
+    // (the persisted ModelStatus.loaded flag is reset on startup, and
+    // conversation.modelId is often empty). Precedence: loaded → conversation →
+    // generic fallback.
+    final loadedModel = ref.read(inferenceNotifierProvider.notifier).loadedModel;
+    final modelName = loadedModel?.name ?? 'unknown';
+    final modelId = loadedModel?.id ?? (conversation?.modelId ?? '');
+    final template = ChatTemplate.forModelId(modelId);
+
+    // Rolling memory: fold any newly-evicted (beyond-window) messages into the
+    // conversation summary before building the prompt.
+    final allMessages = [...current.messages, userMsg];
+    final summary = await _ensureSummary(
+      allMessages: allMessages,
+      existingSummary: conversation?.summary ?? '',
+      summarizedCount: conversation?.summarizedCount ?? 0,
+      template: template,
+    );
+
     // Tool-calling agent path (per-conversation toggle). When enabled, the
     // model decides which tools to call; the auto-RAG/streaming path below is
     // skipped. Plain chat is unchanged.
     if (conversation?.toolsEnabled ?? false) {
-      await _runAgentTurn([...current.messages, userMsg]);
+      await _runAgentTurn(allMessages, template, modelName, summary);
       return;
     }
 
@@ -144,23 +166,13 @@ class ChatNotifier extends _$ChatNotifier {
       }
     }
 
-    // Resolve the model that will actually run this generation from the
-    // authoritative source — the model loaded into the backend. The persisted
-    // ModelStatus.loaded flag is unreliable (reset on startup reconciliation),
-    // and conversation.modelId is often empty. The chat template + stop
-    // sequences must match the running model. Precedence: loaded model →
-    // conversation.modelId → generic fallback.
-    final loadedModel = ref.read(inferenceNotifierProvider.notifier).loadedModel;
-    final modelName = loadedModel?.name ?? 'unknown';
-    final modelId = loadedModel?.id ?? (conversation?.modelId ?? '');
-    final template = ChatTemplate.forModelId(modelId);
-
-    // Build the prompt using the model's real chat template. RAG chunks fold
-    // into the last user turn (see ChatTemplate.format).
-    final systemPrompt = conversation?.systemPrompt ?? '';
-    final prompt = template.format(
-      _historyTurns([...current.messages, userMsg]),
-      systemPrompt,
+    // Build the prompt with the model's real chat template + rolling summary.
+    // RAG chunks fold into the last user turn (see ChatTemplate.format).
+    final prompt = buildPrompt(
+      template: template,
+      turns: _historyTurns(allMessages),
+      systemPrompt: conversation?.systemPrompt ?? '',
+      summary: summary,
       ragContext: _buildRagContext(ragChunks),
     );
     // ~4 chars/token is a rough heuristic for spotting context-window issues.
@@ -278,20 +290,77 @@ class ChatNotifier extends _$ChatNotifier {
     await backend?.stop();
   }
 
+  /// Fold any messages that have fallen outside the prompt window into the
+  /// conversation's rolling summary, persisting it. Returns the (possibly
+  /// updated) summary. Lazy: only runs when the conversation outgrows the window
+  /// and only summarizes the newly-evicted delta. Failures are non-fatal.
+  Future<String> _ensureSummary({
+    required List<Message> allMessages,
+    required String existingSummary,
+    required int summarizedCount,
+    required ChatTemplate template,
+  }) async {
+    final evictBoundary = allMessages.length - _maxHistoryMessages;
+    if (evictBoundary <= summarizedCount) return existingSummary;
+
+    final backend = ref.read(inferenceNotifierProvider).valueOrNull;
+    if (backend == null) return existingSummary;
+
+    final evicted = allMessages.sublist(summarizedCount, evictBoundary);
+    final log = AppLogger.instance;
+    log.info(_logTag, 'summarizing ${evicted.length} evicted message(s)');
+
+    final summarizer = ConversationSummarizer(
+      generate: (instruction) async {
+        final prompt = buildPrompt(
+          template: template,
+          turns: [ChatTurn(MessageRole.user, instruction)],
+        );
+        final buffer = StringBuffer();
+        await for (final token in backend
+            .generate(prompt, stopSequences: template.stopSequences)
+            .timeout(const Duration(seconds: 120))) {
+          buffer.write(token);
+        }
+        return buffer.toString();
+      },
+    );
+
+    try {
+      final summary = await summarizer.summarize(
+        existingSummary: existingSummary,
+        newMessages: evicted,
+      );
+      final conv =
+          ref.read(conversationRepositoryProvider).getById(conversationId);
+      if (conv != null) {
+        ref.read(conversationRepositoryProvider).save(
+              conv.copyWith(summary: summary, summarizedCount: evictBoundary),
+            );
+      }
+      return summary;
+    } catch (e, st) {
+      log.warn(_logTag, 'summarization failed (continuing): $e\n$st');
+      return existingSummary;
+    }
+  }
+
   /// Run one tool-calling agent turn over [history] (the user message is the
   /// last entry). Each generation is peeked: tool-call generations are buffered
   /// silently while a "Using <tool>…" status shows, and the final answer streams
   /// token-by-token, then is saved as the assistant message.
-  Future<void> _runAgentTurn(List<Message> history) async {
+  Future<void> _runAgentTurn(
+    List<Message> history,
+    ChatTemplate template,
+    String modelName,
+    String summary,
+  ) async {
     final log = AppLogger.instance;
     final backend = ref.read(inferenceNotifierProvider).valueOrNull;
     if (backend == null) return;
 
-    final loadedModel = ref.read(inferenceNotifierProvider.notifier).loadedModel;
-    final modelName = loadedModel?.name ?? 'unknown';
-    final conversation = ref.read(conversationRepositoryProvider).getById(conversationId);
-    final modelId = loadedModel?.id ?? (conversation?.modelId ?? '');
-    final template = ChatTemplate.forModelId(modelId);
+    final conversation =
+        ref.read(conversationRepositoryProvider).getById(conversationId);
 
     // Build the tool registry (dependencies injected as functions).
     final embService = ref.read(embeddingServiceProvider).valueOrNull;
@@ -312,18 +381,18 @@ class ChatNotifier extends _$ChatNotifier {
       ),
     ]);
 
-    // Tool instructions go first in the system prompt, then any user prompt.
-    final systemPrompt = [
-      registry.promptDescription(),
-      if ((conversation?.systemPrompt ?? '').isNotEmpty) conversation!.systemPrompt,
-    ].join('\n\n');
-
     final captureIo = ref.read(settingsNotifierProvider).modelIoLoggingEnabled;
 
-    // One model call, streamed: format the turns, yield tokens, and record a
-    // trace when the generation completes.
+    // One model call, streamed: format the turns (tool instructions + system
+    // prompt + rolling summary), yield tokens, and record a trace on completion.
     Stream<String> generateStream(List<ChatTurn> turns) async* {
-      final prompt = template.format(turns, systemPrompt);
+      final prompt = buildPrompt(
+        template: template,
+        turns: turns,
+        systemPrompt: conversation?.systemPrompt ?? '',
+        toolInstructions: registry.promptDescription(),
+        summary: summary,
+      );
       log.info(_logTag,
           'agent generate (${template.kind.name}): ${prompt.length} chars');
       await log.flush();

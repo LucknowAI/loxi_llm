@@ -16,6 +16,8 @@ class Conversation with _$Conversation {
     required int updatedAtMs,
     @Default(false) bool ragEnabled,
     @Default(false) bool toolsEnabled,
+    @Default('') String summary,
+    @Default(0) int summarizedCount,
   }) = _Conversation;
 
   factory Conversation.fromJson(Map<String, dynamic> json) =>

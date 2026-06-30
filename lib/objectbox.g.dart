@@ -102,7 +102,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(2, 3397758933175363016),
     name: 'ConversationEntity',
-    lastPropertyId: const obx_int.IdUid(9, 7916070707912456733),
+    lastPropertyId: const obx_int.IdUid(11, 2057043027340724150),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -157,6 +157,18 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(9, 7916070707912456733),
         name: 'toolsEnabled',
         type: 1,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(10, 700845341778754676),
+        name: 'summary',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(11, 2057043027340724150),
+        name: 'summarizedCount',
+        type: 6,
         flags: 0,
       ),
     ],
@@ -464,7 +476,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final titleOffset = fbb.writeString(object.title);
         final systemPromptOffset = fbb.writeString(object.systemPrompt);
         final modelIdOffset = fbb.writeString(object.modelId);
-        fbb.startTable(10);
+        final summaryOffset = fbb.writeString(object.summary);
+        fbb.startTable(12);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, conversationIdOffset);
         fbb.addOffset(2, titleOffset);
@@ -474,6 +487,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addInt64(6, object.updatedAtMs);
         fbb.addBool(7, object.ragEnabled);
         fbb.addBool(8, object.toolsEnabled);
+        fbb.addOffset(9, summaryOffset);
+        fbb.addInt64(10, object.summarizedCount);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -518,6 +533,15 @@ obx_int.ModelDefinition getObjectBoxModel() {
             rootOffset,
             20,
             false,
+          )
+          ..summary = const fb.StringReader(
+            asciiOptimization: true,
+          ).vTableGet(buffer, rootOffset, 22, '')
+          ..summarizedCount = const fb.Int64Reader().vTableGet(
+            buffer,
+            rootOffset,
+            24,
+            0,
           );
 
         return object;
@@ -796,6 +820,16 @@ class ConversationEntity_ {
   /// See [ConversationEntity.toolsEnabled].
   static final toolsEnabled = obx.QueryBooleanProperty<ConversationEntity>(
     _entities[1].properties[8],
+  );
+
+  /// See [ConversationEntity.summary].
+  static final summary = obx.QueryStringProperty<ConversationEntity>(
+    _entities[1].properties[9],
+  );
+
+  /// See [ConversationEntity.summarizedCount].
+  static final summarizedCount = obx.QueryIntegerProperty<ConversationEntity>(
+    _entities[1].properties[10],
   );
 }
 
