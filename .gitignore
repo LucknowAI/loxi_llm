@@ -50,3 +50,5 @@ app.*.map.json
 .fvm/
 
 docs/superpowers/
+# Gradle build cache (also inside vendored local_packages)
+**/.gradle/

@@ -24,7 +24,12 @@ Widget _buildApp(SharedPreferences prefs) {
 
   return ProviderScope(
     overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
-    child: MaterialApp.router(routerConfig: router),
+    // Match the app theme's classic ripple so page-transition ripples don't
+    // load shaders/ink_sparkle.frag (which fails in the 3.41.0 test env).
+    child: MaterialApp.router(
+      routerConfig: router,
+      theme: ThemeData(splashFactory: InkRipple.splashFactory),
+    ),
   );
 }
 

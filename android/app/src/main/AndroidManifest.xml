@@ -2,7 +2,7 @@
     <!-- Required for dio HTTP downloads (release builds) -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="loki_llm"
+        android:label="Loki LLM"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

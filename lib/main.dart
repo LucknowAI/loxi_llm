@@ -70,6 +70,11 @@ class MyApp extends ConsumerWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
+        // Use the classic ripple instead of the default Material 3 InkSparkle,
+        // which relies on shaders/ink_sparkle.frag — a fragment shader that
+        // fails to decode in the Flutter 3.41.0 test environment (and has had
+        // load issues on some devices). Visually near-identical.
+        splashFactory: InkRipple.splashFactory,
       ),
     );
   }

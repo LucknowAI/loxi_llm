@@ -1,5 +1,5 @@
 name: loki_llm
-description: "A new Flutter project."
+description: "Loki LLM — private, on-device AI chat. Run open LLMs (Gemma, Phi, Llama) locally with document Q&A (RAG) and tools; your data never leaves the device."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -96,6 +96,15 @@ dev_dependencies:
   freezed: ^2.5.7
   json_serializable: ^6.8.0
   objectbox_generator: ^4.0.2
+
+  # App icon generation (placeholder icon drawn by tool/gen_icon.dart).
+  image: ^4.3.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: false
+  image_path: "assets/icon/icon.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

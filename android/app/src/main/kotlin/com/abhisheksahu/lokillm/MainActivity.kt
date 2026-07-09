@@ -1,4 +1,4 @@
-package com.example.loki_llm
+package com.abhisheksahu.lokillm
 
 import io.flutter.embedding.android.FlutterActivity
 

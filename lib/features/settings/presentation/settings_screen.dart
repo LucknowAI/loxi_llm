@@ -50,8 +50,10 @@ class SettingsScreen extends ConsumerWidget {
             secondary: const Icon(Icons.input),
             title: const Text('Model I/O logging'),
             subtitle: const Text(
-              'Record full prompt + response for each generation',
+              'Saves full prompts and responses to unencrypted storage on this '
+              'device. For debugging only — leave off for privacy.',
             ),
+            isThreeLine: true,
             value: settings.modelIoLoggingEnabled,
             onChanged: notifier.setModelIoLoggingEnabled,
           ),
@@ -75,6 +77,20 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: const Text('View app + inference logs'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/logs'),
+          ),
+          const Divider(height: 32),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.description_outlined),
+            title: const Text('Open-source licenses'),
+            subtitle: const Text('Third-party libraries used in this app'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showLicensePage(
+              context: context,
+              applicationName: 'Loki LLM',
+              applicationVersion: '1.0.0',
+              applicationLegalese: '© 2026 Loki LLM authors · MIT License',
+            ),
           ),
         ],
       ),

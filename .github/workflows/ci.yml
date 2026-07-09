@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  analyze-and-test:
+    name: Analyze & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        # llama.cpp is a submodule of the flutter_llama package, but analyze and
+        # the pure-Dart test suite don't compile native code, so we skip it to
+        # keep CI fast. Enable submodules if a native build step is added.
+
+      # Install the exact Flutter version pinned by FVM (.fvmrc / 3.41.0). In
+      # this clean CI environment `flutter`/`dart` ARE this SDK, so fvm is not
+      # needed here (fvm only disambiguates SDKs on the local dev machine).
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.0
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test

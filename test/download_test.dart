@@ -27,13 +27,8 @@ void main() {
       }
     });
 
-    test('Gemma model has task format', () {
-      final gemma = kCuratedModels.first;
-      expect(gemma.format, equals('task'));
-    });
-
-    test('GGUF models have gguf format', () {
-      for (final model in kCuratedModels.skip(1)) {
+    test('all curated models use gguf format', () {
+      for (final model in kCuratedModels) {
         expect(model.format, equals('gguf'));
       }
     });
