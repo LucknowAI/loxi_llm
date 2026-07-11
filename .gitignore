@@ -52,3 +52,7 @@ app.*.map.json
 docs/superpowers/
 # Gradle build cache (also inside vendored local_packages)
 **/.gradle/
+
+# Native build caches (CMake .cxx + vendored plugin build dirs)
+**/.cxx/
+local_packages/*/android/build/
