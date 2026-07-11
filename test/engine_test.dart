@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:loki_llm/core/engine/backend_selector.dart';
 import 'package:loki_llm/core/engine/inference_backend.dart';
 import 'package:loki_llm/core/engine/llama_cpp_backend.dart';
-import 'package:loki_llm/core/engine/mediapipe_backend.dart';
 import 'package:loki_llm/core/providers/inference_provider.dart';
 import 'package:loki_llm/core/providers/objectbox_provider.dart';
 import 'package:loki_llm/core/providers/shared_preferences_provider.dart';
@@ -14,7 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   group('backendForModel (backend selector)', () {
-    test('returns MediaPipeBackend for format == task', () {
+    test('returns LlamaCppBackend for any format', () {
       const model = Model(
         id: 'gemma-2b',
         name: 'Gemma 2B',
@@ -25,7 +24,7 @@ void main() {
         localPath: '/tmp/gemma.task',
       );
       final backend = backendForModel(model);
-      expect(backend, isA<MediaPipeBackend>());
+      expect(backend, isA<LlamaCppBackend>());
     });
 
     test('returns LlamaCppBackend for format == gguf (default)', () {

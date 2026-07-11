@@ -1,9 +1,8 @@
 # local_packages
 
-Vendored copies of pub.dev packages that require patches not upstreamed yet.
-Each package is referenced via `dependency_overrides` in `pubspec.yaml`.
+In-house Flutter plugins for this app, referenced by `path:` in `pubspec.yaml`.
 
-After cloning the repo, initialize submodules:
+After cloning the repo, initialize submodules (pulls in `llama.cpp`):
 
 ```bash
 git submodule update --init --recursive
@@ -11,37 +10,34 @@ git submodule update --init --recursive
 
 ---
 
-## flutter_llama (v1.1.2)
+## llama_engine
 
-**Source:** https://pub.dev/packages/flutter_llama/versions/1.1.2
-**Why vendored:** The published package excludes the `llama.cpp` C++ source
-(trimmed via `.pubignore` to reduce package size from 234 MB to 20 MB), which
-breaks Android builds that compile llama.cpp from source via CMake/NDK.
+**License:** MIT.
 
-### Patches applied
+An in-house, MIT-licensed Flutter plugin (Android only) for on-device GGUF text
+generation via [`llama.cpp`](https://github.com/ggml-org/llama.cpp) (MIT). It was
+written from scratch against llama.cpp's public API — it is **not** derived from
+any third-party wrapper — so the whole repository is cleanly permissive.
 
-| File | Change | Reason |
-|------|--------|--------|
-| `android/build.gradle` | CMake `3.18.1` → `3.22.1` | NDK 27 warns CMake <3.19 is too old for compiler auto-detection; 3.22.1 is the installed version |
-| `android/src/main/cpp/CMakeLists.txt` | Vulkan/OpenCL disabled → CPU+NEON | `vulkan.hpp` C++ header is not bundled in the Android NDK (only the C header `vulkan.h` is); disabling avoids a fatal compile error |
+**What it provides**
+- `LlamaEngine` — load a GGUF model, stream tokens, stop mid-generation, unload.
+- Token-by-token streaming over an `EventChannel`; control over a `MethodChannel`.
+- Native behaviors: batch-safe chunked prompt decode (no crash on long prompts),
+  per-turn KV reset, a `penalties → top_k → top_p → temp` sampler chain, stop
+  sequences with hold-back trimming, and a lock-free stop flag.
 
-### llama.cpp submodule
+**Structure**
+- `lib/llama_engine.dart` — the Dart API.
+- `android/src/main/kotlin/.../LlamaEnginePlugin.kt` — Method/Event channels.
+- `android/src/main/cpp/llama_engine_jni.cpp` — the JNI bridge.
+- `android/src/main/cpp/CMakeLists.txt` — builds `llama.cpp` (CPU-only, arm64).
+- `llama.cpp/` — git submodule, the C++ inference engine compiled by CMake/NDK.
 
-`llama.cpp/` is a shallow git submodule pointing to `ggml-org/llama.cpp` master.
-It is the C++ inference engine compiled by CMake during the Android build.
-
-To update to a newer llama.cpp commit:
+**Update the llama.cpp submodule**
 ```bash
-cd local_packages/flutter_llama/llama.cpp
-git fetch --depth=1 origin master
-git checkout FETCH_HEAD
+cd local_packages/llama_engine/llama.cpp
+git fetch --depth=1 origin master && git checkout FETCH_HEAD
 cd ../../..
-git add local_packages/flutter_llama/llama.cpp
+git add local_packages/llama_engine/llama.cpp
 git commit -m "chore: update llama.cpp submodule"
 ```
-
-### Upstream status
-
-- CMake version issue: https://github.com/nativemind/flutter_llama/issues (report pending)
-- Vulkan C++ headers issue: tied to NDK shipping `vulkan.hpp` — track NDK release notes
-- llama.cpp missing from pub: known limitation of the package; no upstream fix yet

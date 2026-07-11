@@ -49,14 +49,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.11.0"
-  background_downloader:
-    dependency: transitive
-    description:
-      name: background_downloader
-      sha256: "4cb23d9ad4f5060944f38164e7b90d4bf99b57b2472a3bd4676e59b2db4afd06"
-      url: "https://pub.dev"
-    source: hosted
-    version: "9.5.4"
   boolean_selector:
     dependency: transitive
     description:
@@ -318,14 +310,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_gemma:
-    dependency: "direct main"
-    description:
-      name: flutter_gemma
-      sha256: fcaef49dfcfcae89108ff21935ddb675fe20ca67272d48ea13e2eac2fd5ed3fb
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.11.8"
   flutter_launcher_icons:
     dependency: "direct dev"
     description:
@@ -342,13 +326,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.0"
-  flutter_llama:
-    dependency: "direct main"
-    description:
-      path: "local_packages/flutter_llama"
-      relative: true
-    source: path
-    version: "1.1.2"
   flutter_pdf_text:
     dependency: "direct main"
     description:
@@ -511,14 +488,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.3.6+1"
-  large_file_handler:
-    dependency: transitive
-    description:
-      name: large_file_handler
-      sha256: c2ecaf552e8039119bbe3a094d15aecbafe833899f30b2dcfbb513eddf76b36f
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.1"
   leak_tracker:
     dependency: transitive
     description:
@@ -551,6 +520,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.0"
+  llama_engine:
+    dependency: "direct main"
+    description:
+      path: "local_packages/llama_engine"
+      relative: true
+    source: path
+    version: "0.1.0"
   logging:
     dependency: transitive
     description:

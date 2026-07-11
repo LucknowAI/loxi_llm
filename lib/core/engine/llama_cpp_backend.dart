@@ -1,12 +1,12 @@
-import 'package:flutter_llama/flutter_llama.dart';
+import 'package:llama_engine/llama_engine.dart';
 import 'inference_backend.dart';
 
-/// InferenceBackend implementation for GGUF files via flutter_llama (llama.cpp).
+/// InferenceBackend implementation for GGUF files via llama_engine (llama.cpp).
 ///
-/// [FlutterLlama.instance] is a singleton — only one GGUF model can be
-/// loaded at a time. [unloadModel] must be called before loading a new model.
+/// [LlamaEngine.instance] is a singleton — only one GGUF model can be loaded at
+/// a time. [unloadModel] must be called before loading a new model.
 final class LlamaCppBackend extends InferenceBackend {
-  final _llama = FlutterLlama.instance;
+  final _llama = LlamaEngine.instance;
 
   @override
   bool get isLoaded => _llama.isModelLoaded;
@@ -17,11 +17,8 @@ final class LlamaCppBackend extends InferenceBackend {
       LlamaConfig(
         modelPath: path,
         nThreads: 4,
-        nGpuLayers: 0, // CPU-only for safety; GPU tuning in Phase 7
         contextSize: 2048,
         batchSize: 512,
-        useGpu: false,
-        verbose: false,
       ),
     );
     if (!success) {

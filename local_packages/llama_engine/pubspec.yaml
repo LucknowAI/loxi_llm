@@ -1,0 +1,24 @@
+name: llama_engine
+description: >-
+  MIT-licensed Flutter plugin for on-device GGUF text generation via llama.cpp.
+  Android only. Streaming, cancellation, and standard sampler parameters.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.3.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: dev.lokillm.llama_engine
+        pluginClass: LlamaEnginePlugin
