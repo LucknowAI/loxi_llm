@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/inference_provider.dart';
+import '../../agent/agent_model_support.dart';
 import '../data/conversation_repository.dart';
 import '../domain/message_role.dart';
 import 'chat_notifier.dart';
@@ -123,6 +124,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         .firstOrNull;
     final isRagEnabled = currentConv?.ragEnabled ?? false;
     final isToolsEnabled = currentConv?.toolsEnabled ?? false;
+    final loadedModel = ref.watch(inferenceNotifierProvider.notifier).loadedModel;
+    final agentCapable = isAgentCapableModel(loadedModel?.id);
 
     final isModelLoaded = backendAsync.valueOrNull != null;
     final isStreaming = chatAsync.valueOrNull?.isStreaming ?? false;
@@ -149,16 +152,29 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           IconButton(
             icon: Icon(
               isToolsEnabled ? Icons.build : Icons.build_outlined,
-              color: isToolsEnabled
+              color: isToolsEnabled && agentCapable
                   ? Theme.of(context).colorScheme.primary
                   : null,
             ),
-            tooltip: isToolsEnabled
-                ? 'Tools on — tap to disable'
-                : 'Tools off — tap to enable',
-            onPressed: () => ref
-                .read(conversationListNotifierProvider.notifier)
-                .toggleToolsEnabled(widget.conversationId),
+            tooltip: !agentCapable
+                ? 'Tools require Phi-3 or Llama 3.2 3B (load a larger model)'
+                : isToolsEnabled
+                    ? 'Tools on — tap to disable'
+                    : 'Tools off — tap to enable',
+            onPressed: !agentCapable
+                ? () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Tool mode requires Phi-3 Mini or Llama 3.2 3B. '
+                          'Load a larger model from the Models tab.',
+                        ),
+                      ),
+                    );
+                  }
+                : () => ref
+                    .read(conversationListNotifierProvider.notifier)
+                    .toggleToolsEnabled(widget.conversationId),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),

@@ -7,10 +7,8 @@ import '../../../core/logging/model_io_trace.dart';
 import '../../../core/providers/embedding_provider.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../../agent/application/agent_loop.dart';
-import '../../agent/data/tool_registry.dart';
-import '../../agent/tools/calculator_tool.dart';
-import '../../agent/tools/datetime_tool.dart';
-import '../../agent/tools/document_search_tool.dart';
+import '../../agent/agent_model_support.dart';
+import '../../agent/data/tool_registry_factory.dart';
 import '../application/conversation_summarizer.dart';
 import '../application/prompt_builder.dart';
 import '../data/conversation_repository.dart';
@@ -18,6 +16,7 @@ import '../data/message_repository.dart';
 import '../domain/message.dart';
 import '../domain/message_role.dart';
 import '../../documents/data/document_chunk_repository.dart';
+import '../../documents/data/document_repository.dart';
 import '../../documents/domain/document_chunk.dart';
 import '../../settings/presentation/settings_notifier.dart';
 import 'conversation_list_notifier.dart';
@@ -133,12 +132,18 @@ class ChatNotifier extends _$ChatNotifier {
       template: template,
     );
 
-    // Tool-calling agent path (per-conversation toggle). When enabled, the
-    // model decides which tools to call; the auto-RAG/streaming path below is
-    // skipped. Plain chat is unchanged.
+    // Tool-calling agent path (per-conversation toggle). When enabled and the
+    // loaded model supports tools, the model decides which tools to call; the
+    // auto-RAG/streaming path below is skipped. Plain chat is unchanged.
     if (conversation?.toolsEnabled ?? false) {
-      await _runAgentTurn(allMessages, template, modelName, summary);
-      return;
+      final loadedModel =
+          ref.read(inferenceNotifierProvider.notifier).loadedModel;
+      if (isAgentCapableModel(loadedModel?.id)) {
+        await _runAgentTurn(allMessages, template, modelName, summary);
+        return;
+      }
+      log.warn(_logTag,
+          'tools enabled but model ${loadedModel?.id ?? "none"} does not support agent mode; using plain chat');
     }
 
     // Build RAG context if enabled for this conversation
@@ -362,24 +367,25 @@ class ChatNotifier extends _$ChatNotifier {
     final conversation =
         ref.read(conversationRepositoryProvider).getById(conversationId);
 
-    // Build the tool registry (dependencies injected as functions).
+    // Build the tool registry (dependencies injected via factory).
     final embService = ref.read(embeddingServiceProvider).valueOrNull;
     final chunkRepo = ref.read(documentChunkRepositoryProvider);
     final topK = ref.read(settingsNotifierProvider).topK;
-    final registry = ToolRegistry([
-      CalculatorTool(),
-      DateTimeTool(),
-      DocumentSearchTool(
-        embed: (q) async {
-          if (embService == null || !embService.isInitialized) {
-            throw StateError('embedding service unavailable');
-          }
-          return embService.embedQuery(q);
-        },
-        search: (vec, k) => chunkRepo.findSimilar(vec, topK: k),
-        topK: topK,
-      ),
-    ]);
+    final registry = buildDefaultToolRegistry(ToolRegistryDeps(
+      conversationId: conversationId,
+      messageRepo: ref.read(messageRepositoryProvider),
+      documentRepo: ref.read(documentRepositoryProvider),
+      chunkRepo: chunkRepo,
+      embedQuery: (q) async {
+        if (embService == null || !embService.isInitialized) {
+          throw StateError('embedding service unavailable');
+        }
+        return embService.embedQuery(q);
+      },
+      topK: topK,
+      summary: summary,
+      historyWindow: _maxHistoryMessages,
+    ));
 
     final captureIo = ref.read(settingsNotifierProvider).modelIoLoggingEnabled;
 

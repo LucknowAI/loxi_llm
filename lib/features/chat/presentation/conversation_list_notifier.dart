@@ -1,4 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../../core/providers/inference_provider.dart';
+import '../../agent/agent_model_support.dart';
 import '../data/conversation_repository.dart';
 import '../data/message_repository.dart';
 import '../domain/conversation.dart';
@@ -60,6 +62,13 @@ class ConversationListNotifier extends _$ConversationListNotifier {
     final repo = ref.read(conversationRepositoryProvider);
     final conversation = repo.getById(conversationId);
     if (conversation == null) return;
+
+    final enabling = !conversation.toolsEnabled;
+    if (enabling) {
+      final model = ref.read(inferenceNotifierProvider.notifier).loadedModel;
+      if (!isAgentCapableModel(model?.id)) return;
+    }
+
     repo.save(conversation.copyWith(toolsEnabled: !conversation.toolsEnabled));
     ref.invalidateSelf();
   }
