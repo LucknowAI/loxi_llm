@@ -273,22 +273,22 @@ void main() {
   // ──────────────────────────────────────────
   group('ChatState', () {
     test('isStreaming is false when streamingText is null', () {
-      final state = ChatState(messages: const []);
+      const state = ChatState(messages: []);
       expect(state.isStreaming, isFalse);
     });
 
     test('isStreaming is true for empty string streamingText (stream just started)', () {
-      final state = ChatState(messages: const [], streamingText: '');
+      const state = ChatState(messages: [], streamingText: '');
       expect(state.isStreaming, isTrue);
     });
 
     test('isStreaming is true for non-empty streamingText', () {
-      final state = ChatState(messages: const [], streamingText: 'partial');
+      const state = ChatState(messages: [], streamingText: 'partial');
       expect(state.isStreaming, isTrue);
     });
 
     test('copyWith clearStreaming:true sets streamingText to null', () {
-      final state = ChatState(messages: const [], streamingText: 'partial response');
+      const state = ChatState(messages: [], streamingText: 'partial response');
       final cleared = state.copyWith(clearStreaming: true);
       expect(cleared.streamingText, isNull);
       expect(cleared.isStreaming, isFalse);
@@ -296,21 +296,21 @@ void main() {
 
     test('clearStreaming takes precedence — overrides any provided streamingText', () {
       // clearStreaming=true means "stop streaming", even if a value is passed
-      final state = ChatState(messages: const [], streamingText: 'old');
+      const state = ChatState(messages: [], streamingText: 'old');
       final cleared = state.copyWith(streamingText: 'new', clearStreaming: true);
       // Per the implementation: clearStreaming ? null : ...
       expect(cleared.streamingText, isNull);
     });
 
     test('copyWith updates streamingText when clearStreaming is false (default)', () {
-      final state = ChatState(messages: const [], streamingText: 'tok');
+      const state = ChatState(messages: [], streamingText: 'tok');
       final updated = state.copyWith(streamingText: 'token one');
       expect(updated.streamingText, equals('token one'));
       expect(updated.isStreaming, isTrue);
     });
 
     test('copyWith with no arguments preserves all fields', () {
-      final state = ChatState(messages: const [], streamingText: 'hello');
+      const state = ChatState(messages: [], streamingText: 'hello');
       final copy = state.copyWith();
       expect(copy.streamingText, equals('hello'));
       expect(copy.messages, isEmpty);
@@ -324,7 +324,7 @@ void main() {
         content: 'Hi',
         createdAtMs: kNow,
       );
-      final state = ChatState(messages: const []);
+      const state = ChatState(messages: []);
       final updated = state.copyWith(messages: [msg]);
       expect(updated.messages, equals([msg]));
     });
@@ -337,7 +337,7 @@ void main() {
         content: 'Hi',
         createdAtMs: kNow,
       );
-      final state = ChatState(messages: [msg]);
+      const state = ChatState(messages: [msg]);
       final updated = state.copyWith(streamingText: 'streaming...');
       expect(updated.messages, equals([msg]));
     });
