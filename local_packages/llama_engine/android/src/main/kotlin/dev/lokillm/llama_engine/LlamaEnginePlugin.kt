@@ -25,6 +25,7 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var isGenerating = false
 
     companion object {
         init {
@@ -114,6 +115,12 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             return
         }
 
+        if (isGenerating) {
+            result.error("BUSY", "Generation already in progress", null)
+            return
+        }
+        isGenerating = true
+
         executor.execute {
             try {
                 nativeGenerateStreamInit(
@@ -133,6 +140,8 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     resolvedSink.error("EXCEPTION", e.message, null)
                     result.error("EXCEPTION", e.message, null)
                 }
+            } finally {
+                isGenerating = false
             }
         }
     }

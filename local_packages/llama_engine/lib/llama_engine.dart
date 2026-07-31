@@ -74,6 +74,9 @@ class LlamaEngine {
   bool _loaded = false;
   bool get isModelLoaded => _loaded;
 
+  /// Ensures agent-mode back-to-back generations never overlap natively.
+  Future<void> _generationChain = Future.value();
+
   /// Load a GGUF model. Returns true on success.
   Future<bool> loadModel(LlamaConfig config) async {
     final ok = await _channel.invokeMethod<bool>('loadModel', config.toMap());
@@ -89,6 +92,13 @@ class LlamaEngine {
       throw StateError('LlamaEngine: no model loaded');
     }
 
+    // Wait for any in-flight generation to finish before starting another.
+    // Agent mode invokes generate several times per user turn.
+    final previous = _generationChain;
+    final done = Completer<void>();
+    _generationChain = done.future;
+    await previous;
+
     final controller = StreamController<String>();
     late final StreamSubscription<dynamic> sub;
     sub = _events.receiveBroadcastStream().listen(
@@ -100,17 +110,16 @@ class LlamaEngine {
     );
 
     try {
-      // Let the event-channel onListen install the native sink before the
-      // generation begins, then fire generation without awaiting it.
       await Future<void>.delayed(Duration.zero);
-      final generation = _channel.invokeMethod('generateStream', params.toMap());
-      unawaited(generation.catchError((Object e) {
-        if (!controller.isClosed) controller.addError(e);
-      }));
+      final generation =
+          _channel.invokeMethod<void>('generateStream', params.toMap());
       yield* controller.stream;
+      // Ensure native teardown completes before the next generateStream call.
+      await generation;
     } finally {
       await sub.cancel();
       if (!controller.isClosed) await controller.close();
+      done.complete();
     }
   }
 
