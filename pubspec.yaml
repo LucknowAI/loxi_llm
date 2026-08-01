@@ -72,6 +72,8 @@ dependencies:
   flutter_pdf_text: ^0.9.0
   docx_to_text: ^1.0.1
   langchain: ^0.7.7+2
+  share_plus: ^12.0.2
+  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:
