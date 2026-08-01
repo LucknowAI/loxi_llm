@@ -9,6 +9,7 @@ import '../../../core/providers/inference_provider.dart';
 import '../../agent/application/agent_loop.dart';
 import '../../agent/agent_model_support.dart';
 import '../../agent/data/tool_registry_factory.dart';
+import '../../agent/domain/tool_call_grammar.dart';
 import '../application/conversation_summarizer.dart';
 import '../application/prompt_builder.dart';
 import '../data/conversation_repository.dart';
@@ -139,7 +140,17 @@ class ChatNotifier extends _$ChatNotifier {
       final loadedModel =
           ref.read(inferenceNotifierProvider.notifier).loadedModel;
       if (isAgentCapableModel(loadedModel?.id)) {
-        await _runAgentTurn(allMessages, template, modelName, summary);
+        final ragEnabled = conversation?.ragEnabled ?? false;
+        final ragChunks =
+            await _retrieveRagChunks(userMsg.content, ragEnabled);
+        await _runAgentTurn(
+          allMessages,
+          template,
+          modelName,
+          summary,
+          ragEnabled: ragEnabled,
+          ragChunks: ragChunks,
+        );
         return;
       }
       log.warn(_logTag,
@@ -152,23 +163,7 @@ class ChatNotifier extends _$ChatNotifier {
         'ragEnabled=$ragEnabled historyMessages=${current.messages.length}');
     List<DocumentChunk> ragChunks = const [];
     if (ragEnabled) {
-      final embService = ref.read(embeddingServiceProvider).valueOrNull;
-      if (embService != null && embService.isInitialized) {
-        try {
-          log.debug(_logTag, 'RAG: embedding query');
-          final queryVec = await embService.embedQuery(userMsg.content);
-          final topK = ref.read(settingsNotifierProvider).topK;
-          ragChunks = ref
-              .read(documentChunkRepositoryProvider)
-              .findSimilar(queryVec, topK: topK);
-          log.debug(_logTag, 'RAG: retrieved ${ragChunks.length} chunks');
-        } catch (e, st) {
-          // RAG retrieval failure is non-fatal — continue without context
-          log.warn(_logTag, 'RAG retrieval failed (continuing): $e\n$st');
-        }
-      } else {
-        log.debug(_logTag, 'RAG: embedding service unavailable, skipping');
-      }
+      ragChunks = await _retrieveRagChunks(userMsg.content, ragEnabled);
     }
 
     // Build the prompt with the model's real chat template + rolling summary.
@@ -358,8 +353,10 @@ class ChatNotifier extends _$ChatNotifier {
     List<Message> history,
     ChatTemplate template,
     String modelName,
-    String summary,
-  ) async {
+    String summary, {
+    required bool ragEnabled,
+    required List<DocumentChunk> ragChunks,
+  }) async {
     final log = AppLogger.instance;
     final backend = ref.read(inferenceNotifierProvider).valueOrNull;
     if (backend == null) return;
@@ -367,37 +364,50 @@ class ChatNotifier extends _$ChatNotifier {
     final conversation =
         ref.read(conversationRepositoryProvider).getById(conversationId);
 
-    // Build the tool registry (dependencies injected via factory).
+    final settings = ref.read(settingsNotifierProvider);
     final embService = ref.read(embeddingServiceProvider).valueOrNull;
     final chunkRepo = ref.read(documentChunkRepositoryProvider);
-    final topK = ref.read(settingsNotifierProvider).topK;
-    final registry = buildDefaultToolRegistry(ToolRegistryDeps(
-      conversationId: conversationId,
-      messageRepo: ref.read(messageRepositoryProvider),
-      documentRepo: ref.read(documentRepositoryProvider),
-      chunkRepo: chunkRepo,
-      embedQuery: (q) async {
-        if (embService == null || !embService.isInitialized) {
-          throw StateError('embedding service unavailable');
-        }
-        return embService.embedQuery(q);
-      },
-      topK: topK,
-      summary: summary,
-      historyWindow: _maxHistoryMessages,
-    ));
+    final registry = buildDefaultToolRegistry(
+      ToolRegistryDeps(
+        conversationId: conversationId,
+        messageRepo: ref.read(messageRepositoryProvider),
+        documentRepo: ref.read(documentRepositoryProvider),
+        chunkRepo: chunkRepo,
+        embedQuery: (q) async {
+          if (embService == null || !embService.isInitialized) {
+            throw StateError('embedding service unavailable');
+          }
+          return embService.embedQuery(q);
+        },
+        topK: settings.topK,
+        summary: summary,
+        historyWindow: _maxHistoryMessages,
+      ),
+      enabledToolNames: settings.enabledToolNames,
+    );
+    final grammar = ToolCallGrammar.build(registry);
+    final ragContext = _buildRagContext(ragChunks);
+    final ragChunkTexts = ragChunks.map((c) => c.content).toList();
 
-    final captureIo = ref.read(settingsNotifierProvider).modelIoLoggingEnabled;
+    final captureIo = settings.modelIoLoggingEnabled;
+    var agentIteration = 0;
 
-    // One model call, streamed: format the turns (tool instructions + system
-    // prompt + rolling summary), yield tokens, and record a trace on completion.
+    if (state.valueOrNull != null) {
+      state = AsyncData(
+        state.requireValue.copyWith(streamingText: 'Thinking…'),
+      );
+    }
+
+    // One model call, streamed:
     Stream<String> generateStream(List<ChatTurn> turns) async* {
+      final iteration = agentIteration++;
       final prompt = buildPrompt(
         template: template,
         turns: turns,
         systemPrompt: conversation?.systemPrompt ?? '',
         toolInstructions: registry.promptDescription(),
         summary: summary,
+        ragContext: ragContext,
       );
       log.info(_logTag,
           'agent generate (${template.kind.name}): ${prompt.length} chars');
@@ -406,7 +416,11 @@ class ChatNotifier extends _$ChatNotifier {
       final buffer = StringBuffer();
       var tokens = 0;
       await for (final token in backend
-          .generate(prompt, stopSequences: template.stopSequences)
+          .generate(
+            prompt,
+            stopSequences: template.stopSequences,
+            grammar: grammar,
+          )
           .timeout(const Duration(seconds: 120))) {
         buffer.write(token);
         tokens++;
@@ -420,13 +434,14 @@ class ChatNotifier extends _$ChatNotifier {
           backendType: backend.runtimeType.toString(),
           inputPrompt: prompt,
           generationParams: backend.generationParams,
-          ragEnabled: false,
-          ragChunks: const [],
+          ragEnabled: ragEnabled,
+          ragChunks: ragChunkTexts,
           outputText: buffer.toString(),
           tokenCount: tokens,
           timeToFirstTokenMs: null,
           totalDurationMs: DateTime.now().millisecondsSinceEpoch - startMs,
           outcome: TraceOutcome.done,
+          agentIteration: iteration,
         ));
       }
     }
@@ -450,6 +465,27 @@ class ChatNotifier extends _$ChatNotifier {
             state.requireValue.copyWith(streamingText: answerBuffer.toString()),
           );
         }
+      },
+      onToolResult: (toolName, observation, iteration) {
+        if (!captureIo) return;
+        ModelIoLogger.instance.record(ModelIoTrace(
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          conversationId: conversationId,
+          modelName: modelName,
+          backendType: backend.runtimeType.toString(),
+          inputPrompt: '',
+          generationParams: const {},
+          ragEnabled: ragEnabled,
+          ragChunks: ragChunkTexts,
+          outputText: '',
+          tokenCount: 0,
+          timeToFirstTokenMs: null,
+          totalDurationMs: 0,
+          outcome: TraceOutcome.done,
+          agentIteration: iteration,
+          toolName: toolName,
+          toolResult: observation,
+        ));
       },
     );
 
@@ -479,6 +515,34 @@ class ChatNotifier extends _$ChatNotifier {
     } catch (e, st) {
       log.error(_logTag, 'agent loop failed', e, st);
       state = AsyncError(e, st);
+    }
+  }
+
+  /// Retrieve similar document chunks for [query] when [ragEnabled] is true.
+  /// Failures are non-fatal — returns an empty list.
+  Future<List<DocumentChunk>> _retrieveRagChunks(
+    String query,
+    bool ragEnabled,
+  ) async {
+    if (!ragEnabled) return const [];
+    final log = AppLogger.instance;
+    final embService = ref.read(embeddingServiceProvider).valueOrNull;
+    if (embService == null || !embService.isInitialized) {
+      log.debug(_logTag, 'RAG: embedding service unavailable, skipping');
+      return const [];
+    }
+    try {
+      log.debug(_logTag, 'RAG: embedding query');
+      final queryVec = await embService.embedQuery(query);
+      final topK = ref.read(settingsNotifierProvider).topK;
+      final chunks = ref
+          .read(documentChunkRepositoryProvider)
+          .findSimilar(queryVec, topK: topK);
+      log.debug(_logTag, 'RAG: retrieved ${chunks.length} chunks');
+      return chunks;
+    } catch (e, st) {
+      log.warn(_logTag, 'RAG retrieval failed (continuing): $e\n$st');
+      return const [];
     }
   }
 

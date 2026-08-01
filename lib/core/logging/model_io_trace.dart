@@ -37,6 +37,9 @@ class ModelIoTrace {
     required this.totalDurationMs,
     required this.outcome,
     this.error,
+    this.agentIteration,
+    this.toolName,
+    this.toolResult,
   });
 
   final int timestampMs;
@@ -69,6 +72,15 @@ class ModelIoTrace {
   /// Error description when [outcome] is not [TraceOutcome.done].
   final String? error;
 
+  /// Agent loop iteration (0-based), when recorded from agent mode.
+  final int? agentIteration;
+
+  /// Tool invoked after this generation, if output was a tool call.
+  final String? toolName;
+
+  /// Observation returned by a tool (recorded on a separate trace line).
+  final String? toolResult;
+
   int get ragChunkCount => ragChunks.length;
 
   Map<String, Object?> toJson() => {
@@ -86,6 +98,9 @@ class ModelIoTrace {
         'totalDurationMs': totalDurationMs,
         'outcome': outcome.label,
         'error': error,
+        if (agentIteration != null) 'agentIteration': agentIteration,
+        if (toolName != null) 'toolName': toolName,
+        if (toolResult != null) 'toolResult': toolResult,
       };
 
   factory ModelIoTrace.fromJson(Map<String, Object?> json) => ModelIoTrace(
@@ -105,6 +120,9 @@ class ModelIoTrace {
         totalDurationMs: (json['totalDurationMs'] as num?)?.toInt() ?? 0,
         outcome: TraceOutcomeLabel.parse(json['outcome'] as String?),
         error: json['error'] as String?,
+        agentIteration: (json['agentIteration'] as num?)?.toInt(),
+        toolName: json['toolName'] as String?,
+        toolResult: json['toolResult'] as String?,
       );
 
   /// One-line JSON for the .jsonl file.

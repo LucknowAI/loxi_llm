@@ -7,6 +7,8 @@ import '../tools/document_search_tool.dart';
 import '../tools/list_documents_tool.dart';
 import '../tools/recall_memory_tool.dart';
 import '../tools/unit_convert_tool.dart';
+import '../agent_tool_catalog.dart';
+import '../domain/tool.dart';
 import 'tool_registry.dart';
 
 /// Dependencies required to assemble the default [ToolRegistry].
@@ -33,8 +35,12 @@ class ToolRegistryDeps {
 }
 
 /// Builds the default tool registry for agent-mode conversations.
-ToolRegistry buildDefaultToolRegistry(ToolRegistryDeps deps) {
-  return ToolRegistry([
+ToolRegistry buildDefaultToolRegistry(
+  ToolRegistryDeps deps, {
+  Set<String>? enabledToolNames,
+}) {
+  final enabled = enabledToolNames ?? defaultEnabledToolNames();
+  final tools = <Tool>[
     CalculatorTool(),
     DateTimeTool(),
     DocumentSearchTool(
@@ -50,5 +56,7 @@ ToolRegistry buildDefaultToolRegistry(ToolRegistryDeps deps) {
     ),
     ListDocumentsTool(listDocuments: deps.documentRepo.getAll),
     UnitConvertTool(),
-  ]);
+  ].where((t) => enabled.contains(t.name)).toList();
+
+  return ToolRegistry(tools);
 }

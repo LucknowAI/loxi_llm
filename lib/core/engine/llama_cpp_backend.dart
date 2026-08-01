@@ -44,14 +44,18 @@ final class LlamaCppBackend extends InferenceBackend {
       };
 
   @override
-  Stream<String> generate(String prompt,
-      {List<String> stopSequences = const []}) {
+  Stream<String> generate(
+    String prompt, {
+    List<String> stopSequences = const [],
+    String? grammar,
+  }) {
     return _llama.generateStream(
       GenerationParams(
         prompt: prompt,
         maxTokens: _maxTokens,
         temperature: _temperature,
         stopSequences: stopSequences,
+        grammar: grammar,
       ),
     );
   }

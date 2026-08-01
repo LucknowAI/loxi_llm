@@ -148,7 +148,9 @@ class _TraceTile extends StatelessWidget {
       child: ExpansionTile(
         leading: Icon(style.icon, color: style.color, size: 20),
         title: Text(
-          '${_time(trace.timestampMs)} · ${trace.modelName}',
+          '${_time(trace.timestampMs)} · ${trace.modelName}'
+          '${trace.agentIteration != null ? ' · iter ${trace.agentIteration}' : ''}'
+          '${trace.toolName != null ? ' · ${trace.toolName}' : ''}',
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         subtitle: Text(
@@ -183,8 +185,13 @@ class _TraceTile extends StatelessWidget {
               if (trace.error != null) 'error: ${trace.error}',
               'params: ${trace.generationParams}',
               'RAG: ${trace.ragEnabled ? '${trace.ragChunkCount} chunks' : 'off'}',
+              if (trace.agentIteration != null)
+                'agent iteration: ${trace.agentIteration}',
+              if (trace.toolName != null) 'tool: ${trace.toolName}',
             ].join('\n'),
           ),
+          if (trace.toolResult != null)
+            _Section(label: 'Tool result', body: trace.toolResult!),
           if (trace.ragChunks.isNotEmpty)
             _Section(
               label: 'RAG context',

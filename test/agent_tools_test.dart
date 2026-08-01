@@ -6,6 +6,8 @@ import 'package:loki_llm/features/agent/tools/document_search_tool.dart';
 import 'package:loki_llm/features/agent/tools/list_documents_tool.dart';
 import 'package:loki_llm/features/agent/tools/recall_memory_tool.dart';
 import 'package:loki_llm/features/agent/tools/unit_convert_tool.dart';
+import 'package:loki_llm/features/agent/domain/tool_call_grammar.dart';
+import 'package:loki_llm/features/agent/data/tool_registry.dart';
 import 'package:loki_llm/features/chat/domain/message.dart';
 import 'package:loki_llm/features/chat/domain/message_role.dart';
 import 'package:loki_llm/features/documents/domain/document.dart';
@@ -219,6 +221,20 @@ void main() {
       expect(await tool.call({'from': 'km', 'to': 'm'}), startsWith('Error:'));
       expect(await tool.call({'value': 1, 'to': 'm'}), startsWith('Error:'));
       expect(await tool.call({'value': 1, 'from': 'km'}), startsWith('Error:'));
+    });
+  });
+
+  group('ToolCallGrammar', () {
+    test('build includes registered tool names', () {
+      final registry = ToolRegistry([CalculatorTool(), UnitConvertTool()]);
+      final grammar = ToolCallGrammar.build(registry);
+      expect(grammar, isNotNull);
+      expect(grammar, contains('calculator'));
+      expect(grammar, contains('unit_convert'));
+    });
+
+    test('build returns null for empty registry', () {
+      expect(ToolCallGrammar.build(ToolRegistry([])), isNull);
     });
   });
 }

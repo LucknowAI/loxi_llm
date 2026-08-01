@@ -122,9 +122,9 @@ static size_t safe_emit_end(const GenState& gen) {
     return utf8_valid_prefix_len(gen.generated.substr(0, end));
 }
 
-// Build the sampler chain: penalties -> top_k -> top_p -> temp -> dist.
+// Build the sampler chain: penalties -> top_k -> top_p -> temp -> [grammar] -> dist.
 static void rebuildSampler(float temperature, float top_p, int top_k,
-                           float repeat_penalty) {
+                           float repeat_penalty, const char* grammar_str) {
     if (g_sampler) {
         llama_sampler_free(g_sampler);
         g_sampler = nullptr;
@@ -136,6 +136,20 @@ static void rebuildSampler(float temperature, float top_p, int top_k,
     llama_sampler_chain_add(g_sampler, llama_sampler_init_top_k(top_k));
     llama_sampler_chain_add(g_sampler, llama_sampler_init_top_p(top_p, 1));
     llama_sampler_chain_add(g_sampler, llama_sampler_init_temp(temperature));
+    if (grammar_str != nullptr && grammar_str[0] != '\0' && g_vocab != nullptr) {
+        // Use trigger *words* (auto regex-escaped by llama.cpp). Do NOT pass raw
+        // patterns like `{"name"` — `{` is a regex metacharacter and aborts.
+        static const char* kTriggers[] = {"```tool_call"};
+        llama_sampler* grmr = llama_sampler_init_grammar_lazy(
+            g_vocab, grammar_str, "root", kTriggers,
+            sizeof(kTriggers) / sizeof(kTriggers[0]), nullptr, 0);
+        if (grmr != nullptr) {
+            llama_sampler_chain_add(g_sampler, grmr);
+            LOGI("Lazy GBNF grammar attached");
+        } else {
+            LOGE("Failed to parse GBNF grammar — continuing without constraints");
+        }
+    }
     llama_sampler_chain_add(g_sampler, llama_sampler_init_dist(1234));
 }
 
@@ -190,7 +204,8 @@ JNIEXPORT void JNICALL
 Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
     JNIEnv* env, jobject, jstring prompt,
     jfloat temperature, jfloat top_p, jint top_k,
-    jint max_tokens, jfloat repeat_penalty, jobjectArray stop_sequences) {
+    jint max_tokens, jfloat repeat_penalty, jobjectArray stop_sequences,
+    jstring grammar) {
     std::lock_guard<std::mutex> lock(g_mutex);
 
     if (!g_model || !g_context || !g_vocab) {
@@ -199,6 +214,11 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
     }
 
     const std::vector<std::string> stops = jStringArrayToVector(env, stop_sequences);
+
+    const char* grammar_cstr = nullptr;
+    if (grammar != nullptr) {
+        grammar_cstr = env->GetStringUTFChars(grammar, nullptr);
+    }
 
     g_should_stop = false;
     g_gen.reset();
@@ -240,7 +260,10 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
         }
     }
 
-    rebuildSampler(temperature, top_p, top_k, repeat_penalty);
+    rebuildSampler(temperature, top_p, top_k, repeat_penalty, grammar_cstr);
+    if (grammar_cstr != nullptr) {
+        env->ReleaseStringUTFChars(grammar, grammar_cstr);
+    }
 
     g_gen.active = true;
     g_gen.n_pos = (int) tokens.size();

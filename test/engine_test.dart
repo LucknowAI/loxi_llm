@@ -173,7 +173,7 @@ final class _CapturingBackend extends InferenceBackend {
 
   @override
   Stream<String> generate(String prompt,
-      {List<String> stopSequences = const []}) async* {
+      {List<String> stopSequences = const [], String? grammar}) async* {
     lastStops = stopSequences;
   }
 

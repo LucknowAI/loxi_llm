@@ -47,7 +47,7 @@ class GenerationParams {
   /// Strings at which generation halts (the model's turn terminators).
   final List<String> stopSequences;
 
-  /// Reserved for GBNF constrained decoding (currently ignored by the engine).
+  /// Reserved for GBNF constrained decoding (lazy grammar on Android).
   final String? grammar;
 
   Map<String, dynamic> toMap() => {

@@ -100,6 +100,7 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         val repeatPenalty = call.argument<Double>("repeatPenalty")?.toFloat() ?: 1.1f
         val stopSequences =
             (call.argument<List<String>>("stopSequences") ?: emptyList()).toTypedArray()
+        val grammar = call.argument<String>("grammar")
 
         // Wait briefly for the EventChannel's onListen to install the sink,
         // since listen and invoke ride separate channels and can reorder.
@@ -124,7 +125,8 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         executor.execute {
             try {
                 nativeGenerateStreamInit(
-                    prompt, temperature, topP, topK, maxTokens, repeatPenalty, stopSequences
+                    prompt, temperature, topP, topK, maxTokens, repeatPenalty,
+                    stopSequences, grammar
                 )
                 while (true) {
                     val token = nativeGenerateStreamNext() ?: break
@@ -153,7 +155,8 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
     private external fun nativeGenerateStreamInit(
         prompt: String, temperature: Float, topP: Float, topK: Int,
-        maxTokens: Int, repeatPenalty: Float, stopSequences: Array<String>
+        maxTokens: Int, repeatPenalty: Float, stopSequences: Array<String>,
+        grammar: String?,
     )
 
     private external fun nativeGenerateStreamNext(): String?
