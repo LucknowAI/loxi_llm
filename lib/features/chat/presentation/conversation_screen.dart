@@ -297,11 +297,28 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       body: Column(
         children: [
           // Model status banner
-          if (!isModelLoaded)
+          if (isModelLoaded && loadedModel != null)
+            MaterialBanner(
+              content: Text('Using ${loadedModel.name}'),
+              leading: const Icon(Icons.memory_outlined),
+              actions: [
+                TextButton(
+                  onPressed: () =>
+                      ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+                  child: const Text('Dismiss'),
+                ),
+              ],
+            )
+          else if (!isModelLoaded)
             MaterialBanner(
               content: const Text('No model loaded. Go to the Models tab.'),
+              leading: const Icon(Icons.warning_amber_outlined),
               actions: [
-                TextButton(onPressed: () {}, child: const Text('Dismiss')),
+                TextButton(
+                  onPressed: () =>
+                      ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+                  child: const Text('Dismiss'),
+                ),
               ],
             ),
 
