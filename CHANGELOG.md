@@ -4,7 +4,7 @@ All notable changes to Loki LLM are documented here.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.1.0] — unreleased
+## [1.1.0] — 2026-08-03
 
 ### Added
 
@@ -19,6 +19,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Read-aloud on assistant messages (Android) via `TtsService` and `flutter_tts`
 - `SpeechTextNormalizer` so Markdown formatting is not spoken literally
 - Model load feedback: SnackBar on success, active row highlight, chat banners
+- Open-source community docs: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue/PR templates
 
 ### Fixed
 
