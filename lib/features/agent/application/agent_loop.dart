@@ -43,6 +43,7 @@ class AgentLoop {
     this.maxIterations = 5,
     this.onToolCall,
     this.onAnswerToken,
+    this.onToolResult,
   });
 
   /// Streams one model generation for the given turns (formatted by the caller).
@@ -55,6 +56,10 @@ class AgentLoop {
 
   /// Called with each token of the final answer as it streams to the UI.
   final void Function(String token)? onAnswerToken;
+
+  /// Called after a tool returns an observation ([iteration] is 0-based).
+  final void Function(String toolName, String observation, int iteration)?
+      onToolResult;
 
   Future<AgentResult> run(List<ChatTurn> initialTurns) async {
     final turns = [...initialTurns];
@@ -108,6 +113,7 @@ class AgentLoop {
       final observation = tool == null
           ? 'Error: unknown tool "${call.name}".'
           : await tool.call(call.arguments);
+      onToolResult?.call(call.name, observation, i);
 
       steps.add(AgentStep(
         generation: output,

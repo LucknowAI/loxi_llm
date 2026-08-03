@@ -34,23 +34,33 @@ class InferenceNotifier extends _$InferenceNotifier {
       throw StateError('Model ${model.id} cannot be loaded (canLoad=false)');
     }
 
+    final previousModel = loadedModel;
+    final previousBackend = state.valueOrNull;
+
     state = const AsyncLoading();
 
     final backend = backendForModel(model);
     try {
+      if (previousBackend != null) {
+        await previousBackend.unloadModel();
+      }
       await backend.loadModel(model.localPath!);
-      state = AsyncData(backend);
+      // Assign before [state] so listeners (e.g. load SnackBar) see the new model.
       loadedModel = model;
-      // Persist loaded status
-      ref.read(modelRepositoryProvider).save(
-            model.copyWith(status: ModelStatus.loaded),
-          );
+      state = AsyncData(backend);
+      final repo = ref.read(modelRepositoryProvider);
+      repo.save(model.copyWith(status: ModelStatus.loaded));
+      if (previousModel != null && previousModel.id != model.id) {
+        repo.save(previousModel.copyWith(status: ModelStatus.downloaded));
+      }
     } catch (e, st) {
-      state = AsyncError(e, st);
       loadedModel = null;
-      ref.read(modelRepositoryProvider).save(
-            model.copyWith(status: ModelStatus.error),
-          );
+      state = AsyncError(e, st);
+      final repo = ref.read(modelRepositoryProvider);
+      repo.save(model.copyWith(status: ModelStatus.error));
+      if (previousModel != null && previousModel.id != model.id) {
+        repo.save(previousModel.copyWith(status: ModelStatus.downloaded));
+      }
       rethrow;
     }
   }

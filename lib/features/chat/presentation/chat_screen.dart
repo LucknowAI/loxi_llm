@@ -51,10 +51,29 @@ class _ConversationListView extends ConsumerWidget {
       context.go('/chat/$id');
     }
 
+    ref.watch(inferenceNotifierProvider);
+    final loadedModel =
+        ref.read(inferenceNotifierProvider.notifier).loadedModel;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('Conversations'),
+        bottom: loadedModel != null
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(28),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Text(
+                      'Model: ${loadedModel.name}',
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                  ),
+                ),
+              )
+            : null,
       ),
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.add),

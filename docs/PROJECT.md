@@ -12,23 +12,15 @@
 2. [Architecture Overview](#2-architecture-overview)
 3. [Tech Stack](#3-tech-stack)
 4. [Directory Structure](#4-directory-structure)
-5. [Implementation Phases](#5-implementation-phases)
-   - [Phase 1 — Scaffold](#phase-1--scaffold)
-   - [Phase 2 — LLM Engine](#phase-2--llm-engine)
-   - [Phase 3 — Model Hub](#phase-3--model-hub)
-   - [Phase 4 — Chat Core](#phase-4--chat-core)
-   - [Phase 5 — Embedding Pipeline](#phase-5--embedding-pipeline)
-   - [Phase 6 — RAG Pipeline](#phase-6--rag-pipeline)
-   - [Phase 7 — Polish / UX](#phase-7--polish--ux)
-6. [Data Model](#6-data-model)
-7. [Model Lifecycle](#7-model-lifecycle)
-8. [Inference Backend Selection](#8-inference-backend-selection)
-9. [Chat & RAG Message Flow](#9-chat--rag-message-flow)
-10. [Document Ingestion Pipeline](#10-document-ingestion-pipeline)
-11. [Navigation & Routing](#11-navigation--routing)
-12. [Provider Dependency Graph](#12-provider-dependency-graph)
-13. [Testing](#13-testing)
-14. [Build & Run](#14-build--run)
+5. [Data Model](#5-data-model)
+6. [Model Lifecycle](#6-model-lifecycle)
+7. [Inference Backend Selection](#7-inference-backend-selection)
+8. [Chat & RAG Message Flow](#8-chat--rag-message-flow)
+9. [Document Ingestion Pipeline](#9-document-ingestion-pipeline)
+10. [Navigation & Routing](#10-navigation--routing)
+11. [Provider Dependency Graph](#11-provider-dependency-graph)
+12. [Testing](#12-testing)
+13. [Build & Run](#13-build--run)
 
 ---
 
@@ -246,175 +238,7 @@ test/
 
 ---
 
-## 5. Implementation Phases
-
-### Phase 1 — Scaffold
-
-**What was built:**
-- Flutter project skeleton with `pubspec.yaml` fully populated (all runtime and dev dependencies)
-- `analysis_options.yaml` / `flutter_lints` enabled
-- Asset declarations: `assets/models/bge-small-en-v1.5-int8.onnx`, `assets/vocab.txt`
-- ObjectBox store setup with `openObjectBoxStore()` async initializer
-
-**Key files introduced:**
-- `pubspec.yaml`
-- `lib/core/database/objectbox_store.dart`
-
-**Design decisions:**
-- All dependencies pinned upfront so every subsequent phase could import without `pub get` churn
-- ObjectBox chosen over SQLite for its native vector index (HNSW) support — avoids a separate vector DB
-
----
-
-### Phase 2 — LLM Engine
-
-**What was built:**
-- Pluggable `InferenceBackend` abstract class (`loadModel`, `generate`, `unloadModel`, `isLoaded`)
-- `LlamaCppBackend` — wraps `flutter_llama` for `.gguf` GGUF-format models
-- `MediaPipeBackend` — wraps `flutter_gemma` for `.task` Gemma models (MediaPipe runtime)
-- `backendForModel(Model)` selector function: chooses backend based on `model.format`
-- `InferenceNotifier` (Riverpod) — manages the single loaded backend instance; exposes `AsyncValue<InferenceBackend?>`
-
-**Key files:**
-- `lib/core/engine/inference_backend.dart`
-- `lib/core/engine/backend_selector.dart`
-- `lib/core/engine/llama_cpp_backend.dart`
-- `lib/core/engine/mediapipe_backend.dart`
-- `lib/core/providers/inference_provider.dart`
-
-**Design decisions:**
-- `base class` (not `abstract`) so subclasses that miss an override get `UnimplementedError` at runtime rather than compile error — intentional for the plugin abstraction boundary
-- `generate()` returns `Stream<String>` for token streaming; callers use `.listen()` directly
-
----
-
-### Phase 3 — Model Hub
-
-**What was built:**
-- `Model` freezed class with `id`, `name`, `sizeLabel`, `sizeBytes`, `status`, `downloadProgress`, `localPath`, `huggingFaceRepo`, `filename`, `format`
-- `ModelStatus` enum: `available`, `downloading`, `downloaded`, `loading`, `loaded`, `error`, `paused`
-- `kCuratedModels` — 3 curated entries (Gemma3 270M, Phi-3 Mini, Llama 3.2 3B)
-- `ModelRepository` — ObjectBox-backed, seeds from `kCuratedModels` on first open
-- `DownloadService` — Dio download with real-time progress callbacks; cancel token support
-- `FileStorageService` — maps model ID → absolute file path in app documents directory
-- `RamCheckService` — queries `system_info_plus` and shows confirmation dialog if model size > available RAM × 0.6
-- `ModelsNotifier` — orchestrates download/cancel/load/unload/sideload
-- `ModelsScreen` — list with status-driven trailing widget (download, cancel, play, stop, retry)
-
-**Key files:**
-- `lib/features/models/domain/model.dart`
-- `lib/features/models/data/model_catalog.dart`
-- `lib/features/models/data/model_repository.dart`
-- `lib/features/models/presentation/models_notifier.dart`
-- `lib/features/models/presentation/models_screen.dart`
-- `lib/core/services/download_service.dart`
-- `lib/core/services/file_storage_service.dart`
-- `lib/core/services/ram_check_service.dart`
-
-**Design decisions:**
-- `Model` is a pure domain object (freezed, JSON-serializable); it is converted to/from `ModelEntity` for ObjectBox persistence — separates domain from persistence concerns
-- Sideload path uses `file_picker` to let users load arbitrary `.gguf`/`.task` files not in the catalog
-
----
-
-### Phase 4 — Chat Core
-
-**What was built:**
-- `Message` freezed class (`id`, `conversationId`, `role`, `content`, `createdAtMs`)
-- `MessageRole` enum (`user`, `assistant`)
-- `Conversation` freezed class (`id`, `title`, `systemPrompt`, `ragEnabled`, `createdAtMs`, `updatedAtMs`)
-- `MessageRepository` / `ConversationRepository` — ObjectBox-backed CRUD
-- `ChatNotifier` — per-conversation notifier (`build(conversationId)`) that streams tokens from the loaded backend, persists messages, and auto-titles conversations from the first message
-- `ChatScreen` — conversation list with new-conversation FAB
-- `ConversationScreen` — scrollable message thread + text input with streaming indicator
-
-**Key files:**
-- `lib/features/chat/domain/message.dart`
-- `lib/features/chat/domain/conversation.dart`
-- `lib/features/chat/data/message_repository.dart`
-- `lib/features/chat/data/conversation_repository.dart`
-- `lib/features/chat/presentation/chat_notifier.dart`
-- `lib/features/chat/presentation/conversation_screen.dart`
-
-**Design decisions:**
-- `ChatNotifier` is a family notifier keyed by `conversationId` — each conversation has isolated state and a separate `StreamSubscription` that is cancelled on dispose
-- A 60-second per-token timeout prevents the UI from hanging if the model stalls
-- Prompt format uses simple `Human:` / `Assistant:` prefixes to remain backend-agnostic
-
----
-
-### Phase 5 — Embedding Pipeline
-
-**What was built:**
-- `EmbeddingService` — loads `bge-small-en-v1.5-int8.onnx` from Flutter assets via ONNX Runtime; tokenizes with `dart_wordpiece`; returns 384-dimensional L2-normalized float vectors
-- BGE asymmetric usage: `embedQuery()` adds the retrieval prefix; `embedPassage()` embeds raw text
-- `embeddingServiceProvider` — `AsyncNotifier` that calls `EmbeddingService.init()` on creation and `dispose()` on teardown
-
-**Key files:**
-- `lib/core/services/embedding_service.dart`
-- `lib/core/providers/embedding_provider.dart`
-- `assets/models/bge-small-en-v1.5-int8.onnx`
-- `assets/vocab.txt`
-
-**Design decisions:**
-- INT8 quantized ONNX model keeps the asset under 25 MB while maintaining > 97% of the original accuracy
-- Embeddings are computed asynchronously to avoid blocking the UI thread; the ONNX session is reused across all calls (not recreated per embedding)
-
----
-
-### Phase 6 — RAG Pipeline
-
-**What was built:**
-- `Document` freezed class (`id`, `name`, `format`, `chunkCount`, `createdAtMs`)
-- `DocumentChunk` freezed class (`chunkId`, `documentId`, `content`, `chunkIndex`, `createdAtMs`, `embedding`)
-- `DocumentChunkEntity` with `@HnswIndex` annotation on the embedding field — ObjectBox HNSW vector index
-- `DocumentChunkRepository.findSimilar(queryVec, topK)` — cosine HNSW nearest-neighbour search
-- `TextExtractionService` — dispatches to `flutter_pdf_text`, `docx_to_text`, or raw `File.readAsString()` based on file extension
-- `DocumentsNotifier` — full ingestion pipeline: size guard → text extraction → chunking → embedding → ObjectBox save
-- `ChatNotifier.send()` extended with RAG: embed query → findSimilar → prepend context chunks to prompt
-
-**Key files:**
-- `lib/features/documents/domain/document.dart`
-- `lib/features/documents/domain/document_chunk.dart`
-- `lib/features/documents/data/document_chunk_repository.dart`
-- `lib/features/documents/presentation/documents_notifier.dart`
-- `lib/core/services/text_extraction_service.dart`
-
-**Design decisions:**
-- RAG is opt-in per conversation via `Conversation.ragEnabled` — users can have non-grounded chats alongside grounded ones
-- RAG retrieval failure is non-fatal: `ChatNotifier.send()` catches exceptions from the embedding/retrieval path and falls back to vanilla generation
-- `RecursiveCharacterTextSplitter` from `langchain` provides sensible chunk boundaries with 50-token overlap
-
----
-
-### Phase 7 — Polish / UX
-
-**What was built:**
-- `OnboardingScreen` — 3-page `PageView` (Welcome / Download / Chat+Documents); writes `onboarding_complete` to SharedPreferences; navigates to `/models` on completion
-- `SettingsScreen` — sliders for `chunkSize` (100–1000, default 300) and `topK` (1–10, default 3); backed by `SettingsNotifier` / SharedPreferences
-- `AppSettings` domain class + `SettingsNotifier` Riverpod notifier
-- `sharedPreferencesProvider` — injected at startup via `ProviderScope.overrides`
-- `appRouterProvider` reads `onboarding_complete` at build time to set `initialLocation`
-- `StatefulShellRoute.indexedStack` tab navigation (Models / Chat / Documents)
-- Recommendation badges on `Model` (`recommendationBadge` computed property): Fastest / Balanced / Best for RAG
-- Settings icon in `ModelsScreen` AppBar linking to `/settings`
-
-**Key files:**
-- `lib/features/onboarding/presentation/onboarding_screen.dart`
-- `lib/features/settings/domain/app_settings.dart`
-- `lib/features/settings/presentation/settings_notifier.dart`
-- `lib/features/settings/presentation/settings_screen.dart`
-- `lib/core/providers/shared_preferences_provider.dart`
-- `lib/core/router/app_router.dart` (updated)
-- `lib/features/models/domain/model.dart` (updated — `recommendationBadge`)
-
-**Design decisions:**
-- `sharedPreferencesProvider` is overridden at the `ProviderScope` level (not lazily initialized) so the router can read it synchronously during its first build — avoids an async gap in `initialLocation`
-- Settings are stored in SharedPreferences rather than ObjectBox because they are scalar values with no relational needs
-
----
-
-## 6. Data Model
+## 5. Data Model
 
 ```mermaid
 erDiagram
@@ -471,7 +295,7 @@ erDiagram
 
 ---
 
-## 7. Model Lifecycle
+## 6. Model Lifecycle
 
 ```mermaid
 stateDiagram-v2
@@ -494,7 +318,7 @@ stateDiagram-v2
 
 ---
 
-## 8. Inference Backend Selection
+## 7. Inference Backend Selection
 
 ```mermaid
 flowchart LR
@@ -510,7 +334,7 @@ flowchart LR
 
 ---
 
-## 9. Chat & RAG Message Flow
+## 8. Chat & RAG Message Flow
 
 ```mermaid
 sequenceDiagram
@@ -552,7 +376,7 @@ sequenceDiagram
 
 ---
 
-## 10. Document Ingestion Pipeline
+## 9. Document Ingestion Pipeline
 
 ```mermaid
 flowchart TD
@@ -578,7 +402,7 @@ flowchart TD
 
 ---
 
-## 11. Navigation & Routing
+## 10. Navigation & Routing
 
 ```mermaid
 graph LR
@@ -603,7 +427,7 @@ graph LR
 
 ---
 
-## 12. Provider Dependency Graph
+## 11. Provider Dependency Graph
 
 ```mermaid
 graph TD
@@ -662,7 +486,7 @@ graph TD
 
 ---
 
-## 13. Testing
+## 12. Testing
 
 | Test File | What It Covers | Notes |
 |---|---|---|
@@ -692,7 +516,7 @@ flutter test test/engine_test.dart
 
 ---
 
-## 14. Build & Run
+## 13. Build & Run
 
 ```bash
 # Install dependencies

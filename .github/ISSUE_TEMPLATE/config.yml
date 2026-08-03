@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/LucknowAI/loxi_llm/security/advisories/new
+    about: Report a security issue privately — do not use public issues

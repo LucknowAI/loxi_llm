@@ -107,5 +107,29 @@ void main() {
       expect(gen.calls, hasLength(3));
       expect(result.answer, contains('could not finish'));
     });
+
+    test('onToolResult fires after tool execution', () async {
+      String? toolName;
+      String? observation;
+      int? iteration;
+      final gen = _ScriptedGenerate([
+        [
+          '```tool_call\n{"name":"calculator","arguments":{"expression":"1+1"}}\n```',
+        ],
+        ['2'],
+      ]);
+      await AgentLoop(
+        generateStream: gen.call,
+        registry: registry,
+        onToolResult: (name, obs, i) {
+          toolName = name;
+          observation = obs;
+          iteration = i;
+        },
+      ).run(initial);
+      expect(toolName, 'calculator');
+      expect(observation, '2');
+      expect(iteration, 0);
+    });
   });
 }

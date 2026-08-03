@@ -44,6 +44,31 @@ void main() {
       expect(restored.outcome, TraceOutcome.done);
     });
 
+    test('round-trips agent iteration and tool fields', () {
+      const original = ModelIoTrace(
+        timestampMs: 1,
+        conversationId: 'c',
+        modelName: 'm',
+        backendType: 'b',
+        inputPrompt: 'p',
+        generationParams: {},
+        ragEnabled: true,
+        ragChunks: ['ctx'],
+        outputText: 'out',
+        tokenCount: 2,
+        timeToFirstTokenMs: 10,
+        totalDurationMs: 100,
+        outcome: TraceOutcome.done,
+        agentIteration: 1,
+        toolName: 'calculator',
+        toolResult: '42',
+      );
+      final restored = ModelIoTrace.fromJson(original.toJson());
+      expect(restored.agentIteration, 1);
+      expect(restored.toolName, 'calculator');
+      expect(restored.toolResult, '42');
+    });
+
     test('round-trips an error outcome with a null TTFT', () {
       const original = ModelIoTrace(
         timestampMs: 1,

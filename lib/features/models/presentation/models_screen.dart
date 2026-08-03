@@ -15,9 +15,31 @@ class ModelsScreen extends ConsumerWidget {
     final modelsAsync = ref.watch(modelsNotifierProvider);
 
     ref.listen(inferenceNotifierProvider, (previous, next) {
+      final wasLoading = previous?.isLoading ?? false;
       next.whenOrNull(
+        data: (backend) {
+          if (wasLoading && backend != null) {
+            final name = ref
+                    .read(inferenceNotifierProvider.notifier)
+                    .loadedModel
+                    ?.name ??
+                'Model';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('$name loaded — ready to chat'),
+                action: SnackBarAction(
+                  label: 'Open Chat',
+                  onPressed: () => context.go('/chat'),
+                ),
+              ),
+            );
+          }
+        },
         error: (e, _) => ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Engine error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Failed to load model: $e'),
+            backgroundColor: Colors.red,
+          ),
         ),
       );
     });
@@ -64,11 +86,21 @@ class _ModelListTile extends ConsumerWidget {
     final speed = model.status == ModelStatus.downloading
         ? ref.read(modelsNotifierProvider.notifier).downloadSpeed[model.id]
         : null;
+    final isActive = model.status == ModelStatus.loaded;
     return Column(
       children: [
         ListTile(
+          tileColor: isActive
+              ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35)
+              : null,
+          leading: isActive
+              ? Icon(
+                  Icons.check_circle,
+                  color: Theme.of(context).colorScheme.primary,
+                )
+              : null,
           title: Text(model.name),
-          subtitle: _subtitle(speed),
+          subtitle: _subtitle(context, speed),
           trailing: _trailingWidget(context, ref),
         ),
         if (model.status == ModelStatus.downloading)
@@ -91,26 +123,45 @@ class _ModelListTile extends ConsumerWidget {
     return '${bytesPerSecond.toStringAsFixed(0)} B/s';
   }
 
-  Widget _subtitle(double? speed) {
+  Widget _subtitle(BuildContext context, double? speed) {
     final badge = model.recommendationBadge;
     final speedSuffix = (speed != null && speed > 0)
         ? ' · ${_formatSpeed(speed)}'
         : '';
-    final statusText = model.status == ModelStatus.downloading
-        ? '${model.sizeLabel} — ${(model.downloadProgress * 100).toStringAsFixed(0)}%$speedSuffix'
-        : '${model.sizeLabel} — ${model.status.name}';
-    if (badge == null) return Text(statusText);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(statusText),
-        const SizedBox(height: 4),
+    final statusLabel = switch (model.status) {
+      ModelStatus.downloading =>
+        '${model.sizeLabel} — ${(model.downloadProgress * 100).toStringAsFixed(0)}%$speedSuffix',
+      ModelStatus.loading => '${model.sizeLabel} — loading into memory…',
+      ModelStatus.loaded => '${model.sizeLabel} — active, ready to chat',
+      _ => '${model.sizeLabel} — ${model.status.name}',
+    };
+    final chips = <Widget>[
+      if (model.status == ModelStatus.loaded)
+        Chip(
+          label: const Text('Active'),
+          padding: EdgeInsets.zero,
+          labelStyle: TextStyle(
+            fontSize: 11,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          visualDensity: VisualDensity.compact,
+        ),
+      if (badge != null)
         Chip(
           label: Text(badge),
           padding: EdgeInsets.zero,
           labelStyle: const TextStyle(fontSize: 11),
           visualDensity: VisualDensity.compact,
         ),
+    ];
+    if (chips.isEmpty) return Text(statusLabel);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(statusLabel),
+        const SizedBox(height: 4),
+        Wrap(spacing: 6, runSpacing: 4, children: chips),
       ],
     );
   }

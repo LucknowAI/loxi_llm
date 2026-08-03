@@ -12,7 +12,11 @@ base class InferenceBackend {
   /// [stopSequences] are strings at which generation should halt (the model's
   /// turn terminators, supplied by the chat template). Backends that handle
   /// stopping internally (e.g. MediaPipe) may ignore them.
-  Stream<String> generate(String prompt, {List<String> stopSequences = const []}) =>
+  Stream<String> generate(
+    String prompt, {
+    List<String> stopSequences = const [],
+    String? grammar,
+  }) =>
       throw UnimplementedError('generate not implemented');
 
   Future<void> unloadModel() =>

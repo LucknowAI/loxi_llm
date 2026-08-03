@@ -48,7 +48,7 @@ git submodule update --init --recursive
 
 ## Testing
 
-Tests live in `test/`. Native plugins (ObjectBox, llama, gemma, ONNX) are mocked or use in-memory configs where needed. See `docs/PROJECT.md` §13 for coverage map.
+Tests live in `test/`. Native plugins (ObjectBox, llama, gemma, ONNX) are mocked or use in-memory configs where needed. See `docs/PROJECT.md` §12 for coverage map.
 
 ## Documentation
 

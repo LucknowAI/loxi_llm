@@ -4,6 +4,28 @@ All notable changes to Loki LLM are documented here.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.0] — unreleased
+
+### Added
+
+- Agent tools: `recall_memory`, `list_documents`, `unit_convert`
+- Lazy GBNF grammar for more reliable tool-call JSON
+- Per-tool enable toggles in Settings
+- Unified RAG + agent mode in chat
+- Per-iteration fields in Model I/O trace (agent steps, tool results)
+- Agent mode gating for Gemma 270M (plain chat only)
+- Export or share conversations as Markdown
+- Per-message copy on chat bubbles
+- Read-aloud on assistant messages (Android) via `TtsService` and `flutter_tts`
+- `SpeechTextNormalizer` so Markdown formatting is not spoken literally
+- Model load feedback: SnackBar on success, active row highlight, chat banners
+
+### Fixed
+
+- Agent-mode native crash during multi-step generation (JNI UTF-8, generation chain lock)
+- Model load SnackBar showing the previous model name when switching models
+- Switching models without unload now unloads the prior backend and clears its loaded status
+
 ## [1.0.0] — 2026-08-01
 
 First stable on-device release.

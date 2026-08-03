@@ -96,5 +96,48 @@ void main() {
 
       expect(prefs.getInt('settings_chunk_size'), equals(500));
     });
+
+    test('defaults all agent tools enabled', () async {
+      final (container, _) = await makeContainer();
+      addTearDown(container.dispose);
+
+      final settings = container.read(settingsNotifierProvider);
+      expect(settings.enabledToolNames.length, equals(6));
+      expect(settings.enabledToolNames, contains('calculator'));
+      expect(settings.enabledToolNames, contains('unit_convert'));
+    });
+
+    test('setToolEnabled persists disabled tools', () async {
+      final (container, prefs) = await makeContainer();
+      addTearDown(container.dispose);
+
+      container
+          .read(settingsNotifierProvider.notifier)
+          .setToolEnabled('calculator', false);
+
+      expect(
+        prefs.getString('settings_enabled_tools'),
+        isNot(contains('calculator')),
+      );
+      expect(
+        container.read(settingsNotifierProvider).enabledToolNames,
+        isNot(contains('calculator')),
+      );
+    });
+
+    test('setToolEnabled re-enables a disabled tool', () async {
+      final (container, prefs) = await makeContainer();
+      addTearDown(container.dispose);
+
+      final notifier = container.read(settingsNotifierProvider.notifier);
+      notifier.setToolEnabled('datetime', false);
+      notifier.setToolEnabled('datetime', true);
+
+      expect(prefs.getString('settings_enabled_tools'), contains('datetime'));
+      expect(
+        container.read(settingsNotifierProvider).enabledToolNames,
+        contains('datetime'),
+      );
+    });
   });
 }

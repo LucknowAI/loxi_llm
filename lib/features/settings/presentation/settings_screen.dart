@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../agent/agent_tool_catalog.dart';
 import 'settings_notifier.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -43,6 +44,27 @@ class SettingsScreen extends ConsumerWidget {
             divisions: 9,
             label: settings.topK.toString(),
             onChanged: (v) => notifier.setTopK(v.round()),
+          ),
+          const Divider(height: 32),
+          Text(
+            'Agent tools',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Choose which tools the model can call in agent mode.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          ...kAgentToolCatalog.map(
+            (tool) => SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(tool.label),
+              subtitle: Text(tool.name),
+              value: settings.enabledToolNames.contains(tool.name),
+              onChanged: (enabled) =>
+                  notifier.setToolEnabled(tool.name, enabled),
+            ),
           ),
           const Divider(height: 32),
           SwitchListTile(

@@ -1,0 +1,99 @@
+name: Bug report
+description: Something isn't working as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in what you can;
+        screenshots and logs help a lot.
+
+        Before filing, search [existing issues](https://github.com/LucknowAI/loxi_llm/issues)
+        to avoid duplicates.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When I tap Stop during streaming, the model keeps generating...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the behavior.
+      placeholder: |
+        1. Load Phi-3 Mini
+        2. Start a new chat
+        3. Send "Hello"
+        4. Tap Stop while streaming
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Settings → About, or the release tag you built from (e.g. v1.1.0).
+      placeholder: v1.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: Model in use
+      options:
+        - Gemma 3 270M IT
+        - Phi-3 Mini 4K
+        - Llama 3.2 3B
+        - Custom / sideloaded GGUF
+        - None / not model-related
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device & Android version
+      placeholder: Pixel 8, Android 15
+    validations:
+      required: true
+
+  - type: dropdown
+    id: features
+    attributes:
+      label: Relevant features enabled
+      multiple: true
+      options:
+        - RAG / documents
+        - Agent / tool-calling mode
+        - Rolling conversation memory
+        - Model I/O trace
+        - None of the above
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: In-app logs (Settings → Logs) or stack traces. Redact personal content.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and did not find a duplicate
+          required: true
+        - label: I am running a build from `main` or `develop`, or a tagged release
+          required: false

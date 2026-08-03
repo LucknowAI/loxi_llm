@@ -87,9 +87,44 @@ static size_t longestStopLen(const std::vector<std::string>& stops) {
     return m;
 }
 
-// Build the sampler chain: penalties -> top_k -> top_p -> temp -> dist.
+// Returns the length of the longest valid UTF-8 prefix of [text]. Trailing
+// bytes that belong to an incomplete multi-byte character are excluded so
+// NewStringUTF never receives invalid Modified UTF-8 (which aborts on Android).
+static size_t utf8_valid_prefix_len(const std::string& text) {
+    const size_t len = text.size();
+    if (len == 0) return 0;
+
+    for (size_t i = 1; i <= 4 && i <= len; ++i) {
+        const unsigned char c = static_cast<unsigned char>(text[len - i]);
+        if ((c & 0xE0) == 0xC0) {
+            if (i < 2) return len - i;
+        } else if ((c & 0xF0) == 0xE0) {
+            if (i < 3) return len - i;
+        } else if ((c & 0xF8) == 0xF0) {
+            if (i < 4) return len - i;
+        }
+    }
+    return len;
+}
+
+static jstring new_jstring_utf8(JNIEnv* env, const std::string& s) {
+    if (s.empty()) return env->NewStringUTF("");
+    const size_t valid = utf8_valid_prefix_len(s);
+    if (valid == 0) return env->NewStringUTF("");
+    return env->NewStringUTF(s.substr(0, valid).c_str());
+}
+
+// Max safe emit end accounting for stop-sequence hold-back and UTF-8 boundaries.
+static size_t safe_emit_end(const GenState& gen) {
+    size_t end = gen.generated.size();
+    const size_t stop_holdback = gen.max_stop_len > 1 ? gen.max_stop_len - 1 : 0;
+    if (end > stop_holdback) end -= stop_holdback;
+    return utf8_valid_prefix_len(gen.generated.substr(0, end));
+}
+
+// Build the sampler chain: penalties -> top_k -> top_p -> temp -> [grammar] -> dist.
 static void rebuildSampler(float temperature, float top_p, int top_k,
-                           float repeat_penalty) {
+                           float repeat_penalty, const char* grammar_str) {
     if (g_sampler) {
         llama_sampler_free(g_sampler);
         g_sampler = nullptr;
@@ -101,6 +136,20 @@ static void rebuildSampler(float temperature, float top_p, int top_k,
     llama_sampler_chain_add(g_sampler, llama_sampler_init_top_k(top_k));
     llama_sampler_chain_add(g_sampler, llama_sampler_init_top_p(top_p, 1));
     llama_sampler_chain_add(g_sampler, llama_sampler_init_temp(temperature));
+    if (grammar_str != nullptr && grammar_str[0] != '\0' && g_vocab != nullptr) {
+        // Use trigger *words* (auto regex-escaped by llama.cpp). Do NOT pass raw
+        // patterns like `{"name"` — `{` is a regex metacharacter and aborts.
+        static const char* kTriggers[] = {"```tool_call"};
+        llama_sampler* grmr = llama_sampler_init_grammar_lazy(
+            g_vocab, grammar_str, "root", kTriggers,
+            sizeof(kTriggers) / sizeof(kTriggers[0]), nullptr, 0);
+        if (grmr != nullptr) {
+            llama_sampler_chain_add(g_sampler, grmr);
+            LOGI("Lazy GBNF grammar attached");
+        } else {
+            LOGE("Failed to parse GBNF grammar — continuing without constraints");
+        }
+    }
     llama_sampler_chain_add(g_sampler, llama_sampler_init_dist(1234));
 }
 
@@ -155,7 +204,8 @@ JNIEXPORT void JNICALL
 Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
     JNIEnv* env, jobject, jstring prompt,
     jfloat temperature, jfloat top_p, jint top_k,
-    jint max_tokens, jfloat repeat_penalty, jobjectArray stop_sequences) {
+    jint max_tokens, jfloat repeat_penalty, jobjectArray stop_sequences,
+    jstring grammar) {
     std::lock_guard<std::mutex> lock(g_mutex);
 
     if (!g_model || !g_context || !g_vocab) {
@@ -164,6 +214,11 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
     }
 
     const std::vector<std::string> stops = jStringArrayToVector(env, stop_sequences);
+
+    const char* grammar_cstr = nullptr;
+    if (grammar != nullptr) {
+        grammar_cstr = env->GetStringUTFChars(grammar, nullptr);
+    }
 
     g_should_stop = false;
     g_gen.reset();
@@ -205,7 +260,10 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
         }
     }
 
-    rebuildSampler(temperature, top_p, top_k, repeat_penalty);
+    rebuildSampler(temperature, top_p, top_k, repeat_penalty, grammar_cstr);
+    if (grammar_cstr != nullptr) {
+        env->ReleaseStringUTFChars(grammar, grammar_cstr);
+    }
 
     g_gen.active = true;
     g_gen.n_pos = (int) tokens.size();
@@ -227,9 +285,13 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamNext(
     auto end_with_flush = [&]() -> jstring {
         g_gen.active = false;
         if (!g_gen.stopped_on_seq && g_gen.pushed < g_gen.generated.size()) {
-            const std::string tail = g_gen.generated.substr(g_gen.pushed);
-            g_gen.pushed = g_gen.generated.size();
-            return env->NewStringUTF(tail.c_str());
+            const size_t utf8_end = utf8_valid_prefix_len(g_gen.generated);
+            if (utf8_end > g_gen.pushed) {
+                const std::string tail =
+                    g_gen.generated.substr(g_gen.pushed, utf8_end - g_gen.pushed);
+                g_gen.pushed = utf8_end;
+                return new_jstring_utf8(env, tail);
+            }
         }
         return nullptr;
     };
@@ -262,21 +324,23 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamNext(
     const size_t stop_pos = earliestStop(g_gen.generated, g_gen.stops);
     if (stop_pos != std::string::npos) {
         std::string emit;
-        if (stop_pos > g_gen.pushed) emit = g_gen.generated.substr(g_gen.pushed, stop_pos - g_gen.pushed);
+        if (stop_pos > g_gen.pushed) {
+            const std::string slice =
+                g_gen.generated.substr(g_gen.pushed, stop_pos - g_gen.pushed);
+            emit = slice.substr(0, utf8_valid_prefix_len(slice));
+        }
         g_gen.stopped_on_seq = true;
         g_gen.active = false;
-        return env->NewStringUTF(emit.c_str());
+        return new_jstring_utf8(env, emit);
     }
 
-    const size_t holdback = g_gen.max_stop_len > 1 ? g_gen.max_stop_len - 1 : 0;
+    const size_t emit_end = safe_emit_end(g_gen);
     std::string emit;
-    if (g_gen.generated.size() > g_gen.pushed + holdback) {
-        const size_t emit_end = g_gen.generated.size() - holdback;
+    if (emit_end > g_gen.pushed) {
         emit = g_gen.generated.substr(g_gen.pushed, emit_end - g_gen.pushed);
         g_gen.pushed = emit_end;
     }
-    // May be "" (a token was generated but nothing is safe to emit yet).
-    return env->NewStringUTF(emit.c_str());
+    return new_jstring_utf8(env, emit);
 }
 
 JNIEXPORT void JNICALL

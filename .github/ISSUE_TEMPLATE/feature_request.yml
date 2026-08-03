@@ -1,0 +1,65 @@
+name: Feature request
+description: Suggest an idea for Loki LLM
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature. For large proposals, maintainers may ask
+        you to refine the idea in the issue before implementation starts.
+
+        See [CONTRIBUTING.md](https://github.com/LucknowAI/loxi_llm/blob/develop/CONTRIBUTING.md)
+        for how we accept changes.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What problem does this solve? Who benefits?
+      placeholder: I want to export embeddings so I can reuse them across devices...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like this to work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you've thought about.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Chat / streaming
+        - Models / downloads
+        - RAG / documents
+        - Agent / tools
+        - Settings / UX
+        - Native engine (llama_engine)
+        - CI / developer experience
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: I am willing to open a PR for this (target branch develop)
+          required: false
+        - label: This fits the on-device / privacy-first goal of the project
+          required: false

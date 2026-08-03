@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../../core/providers/inference_provider.dart';
+import '../../../core/providers/tts_provider.dart';
+import '../../agent/agent_model_support.dart';
+import '../application/conversation_markdown_exporter.dart';
 import '../data/conversation_repository.dart';
+import '../domain/conversation.dart';
+import '../domain/message.dart';
 import '../domain/message_role.dart';
 import 'chat_notifier.dart';
 import 'conversation_list_notifier.dart';
+import 'widgets/message_bubble.dart';
 
 class ConversationScreen extends ConsumerStatefulWidget {
   const ConversationScreen({super.key, required this.conversationId});
@@ -20,6 +28,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   late final TextEditingController _textController;
   late final ScrollController _scrollController;
 
+  /// Message id currently being read aloud, if any.
+  String? _speakingMessageId;
+
   @override
   void initState() {
     super.initState();
@@ -29,6 +40,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   @override
   void dispose() {
+    ref.read(ttsServiceProvider).stop();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose(); // MUST be last
@@ -109,6 +121,72 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> _copyText(String text, {required String confirmation}) async {
+    if (text.trim().isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    _showSnack(confirmation);
+  }
+
+  Future<void> _shareConversation(
+    Conversation conversation,
+    List<Message> messages,
+  ) async {
+    if (messages.isEmpty) {
+      _showSnack('Nothing to export yet');
+      return;
+    }
+    final markdown = exportConversationMarkdown(
+      conversation: conversation,
+      messages: messages,
+    );
+    await SharePlus.instance.share(
+      ShareParams(text: markdown, subject: conversation.title),
+    );
+  }
+
+  Future<void> _copyConversation(
+    Conversation conversation,
+    List<Message> messages,
+  ) async {
+    if (messages.isEmpty) {
+      _showSnack('Nothing to copy yet');
+      return;
+    }
+    await _copyText(
+      exportConversationMarkdown(
+        conversation: conversation,
+        messages: messages,
+      ),
+      confirmation: 'Conversation copied to clipboard',
+    );
+  }
+
+  Future<void> _toggleReadAloud(Message message) async {
+    final tts = ref.read(ttsServiceProvider);
+    if (!tts.isSupported) {
+      _showSnack('Read aloud is available on Android');
+      return;
+    }
+    if (_speakingMessageId == message.id) {
+      await tts.stop();
+      setState(() => _speakingMessageId = null);
+      return;
+    }
+    await tts.stop();
+    setState(() => _speakingMessageId = message.id);
+    await tts.speak(message.content);
+    if (mounted && _speakingMessageId == message.id) {
+      setState(() => _speakingMessageId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatAsync = ref.watch(chatNotifierProvider(widget.conversationId));
@@ -123,15 +201,51 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         .firstOrNull;
     final isRagEnabled = currentConv?.ragEnabled ?? false;
     final isToolsEnabled = currentConv?.toolsEnabled ?? false;
+    final loadedModel = ref.watch(inferenceNotifierProvider.notifier).loadedModel;
+    final agentCapable = isAgentCapableModel(loadedModel?.id);
 
     final isModelLoaded = backendAsync.valueOrNull != null;
     final isStreaming = chatAsync.valueOrNull?.isStreaming ?? false;
+    final exportConversation = conversation ?? currentConv;
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(conversation?.title ?? 'Chat'),
         actions: [
+          if (exportConversation != null)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.ios_share_outlined),
+              tooltip: 'Export conversation',
+              onSelected: (value) {
+                final messages =
+                    chatAsync.valueOrNull?.messages ?? const <Message>[];
+                switch (value) {
+                  case 'share':
+                    _shareConversation(exportConversation, messages);
+                  case 'copy':
+                    _copyConversation(exportConversation, messages);
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'share',
+                  child: ListTile(
+                    leading: Icon(Icons.share_outlined),
+                    title: Text('Share as Markdown'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'copy',
+                  child: ListTile(
+                    leading: Icon(Icons.copy_all_outlined),
+                    title: Text('Copy conversation'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
           IconButton(
             icon: Icon(
               isRagEnabled ? Icons.auto_awesome : Icons.auto_awesome_outlined,
@@ -149,16 +263,29 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           IconButton(
             icon: Icon(
               isToolsEnabled ? Icons.build : Icons.build_outlined,
-              color: isToolsEnabled
+              color: isToolsEnabled && agentCapable
                   ? Theme.of(context).colorScheme.primary
                   : null,
             ),
-            tooltip: isToolsEnabled
-                ? 'Tools on — tap to disable'
-                : 'Tools off — tap to enable',
-            onPressed: () => ref
-                .read(conversationListNotifierProvider.notifier)
-                .toggleToolsEnabled(widget.conversationId),
+            tooltip: !agentCapable
+                ? 'Tools require Phi-3 or Llama 3.2 3B (load a larger model)'
+                : isToolsEnabled
+                    ? 'Tools on — tap to disable'
+                    : 'Tools off — tap to enable',
+            onPressed: !agentCapable
+                ? () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Tool mode requires Phi-3 Mini or Llama 3.2 3B. '
+                          'Load a larger model from the Models tab.',
+                        ),
+                      ),
+                    );
+                  }
+                : () => ref
+                    .read(conversationListNotifierProvider.notifier)
+                    .toggleToolsEnabled(widget.conversationId),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -170,11 +297,28 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       body: Column(
         children: [
           // Model status banner
-          if (!isModelLoaded)
+          if (isModelLoaded && loadedModel != null)
+            MaterialBanner(
+              content: Text('Using ${loadedModel.name}'),
+              leading: const Icon(Icons.memory_outlined),
+              actions: [
+                TextButton(
+                  onPressed: () =>
+                      ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+                  child: const Text('Dismiss'),
+                ),
+              ],
+            )
+          else if (!isModelLoaded)
             MaterialBanner(
               content: const Text('No model loaded. Go to the Models tab.'),
+              leading: const Icon(Icons.warning_amber_outlined),
               actions: [
-                TextButton(onPressed: () {}, child: const Text('Dismiss')),
+                TextButton(
+                  onPressed: () =>
+                      ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+                  child: const Text('Dismiss'),
+                ),
               ],
             ),
 
@@ -203,7 +347,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                       // "thinking" indicator so the user knows the model is
                       // working (time-to-first-token can be significant).
                       if (streamingText.isEmpty) {
-                        return _MessageBubble(
+                        return MessageBubble(
                           isUser: false,
                           isStreaming: true,
                           child: _TypingIndicator(
@@ -213,17 +357,25 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                           ),
                         );
                       }
-                      return _MessageBubble(
+                      return MessageBubble(
                         content: '$streamingText▌',
                         isUser: false,
                         isStreaming: true,
                       );
                     }
                     final msg = messages[index];
-                    return _MessageBubble(
+                    return MessageBubble(
                       content: msg.content,
                       isUser: msg.role == MessageRole.user,
                       isStreaming: false,
+                      onCopy: () => _copyText(
+                        msg.content,
+                        confirmation: 'Message copied',
+                      ),
+                      onReadAloud: msg.role == MessageRole.assistant
+                          ? () => _toggleReadAloud(msg)
+                          : null,
+                      isSpeaking: _speakingMessageId == msg.id,
                     );
                   },
                 );
@@ -291,10 +443,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   IconButton.filled(
                     icon: const Icon(Icons.stop),
                     tooltip: 'Stop generating',
-                    onPressed: () => ref
-                        .read(chatNotifierProvider(widget.conversationId)
-                            .notifier)
-                        .stop(),
+                    onPressed: () {
+                      ref.read(ttsServiceProvider).stop();
+                      setState(() => _speakingMessageId = null);
+                      ref
+                          .read(chatNotifierProvider(widget.conversationId)
+                              .notifier)
+                          .stop();
+                    },
                   )
                 else
                   IconButton.filled(
@@ -305,61 +461,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({
-    this.content,
-    this.child,
-    required this.isUser,
-    required this.isStreaming,
-  }) : assert(content != null || child != null,
-            'Provide either content or child');
-
-  /// Text to render. Ignored when [child] is supplied.
-  final String? content;
-
-  /// Custom bubble body (e.g. the typing indicator). Takes precedence
-  /// over [content].
-  final Widget? child;
-  final bool isUser;
-  final bool isStreaming;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
-        ),
-        decoration: BoxDecoration(
-          color: isUser
-              ? colorScheme.primaryContainer
-              : colorScheme.secondaryContainer,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isUser ? 16 : 4),
-            bottomRight: Radius.circular(isUser ? 4 : 16),
-          ),
-        ),
-        child: child ??
-            Text(
-              content!,
-              style: TextStyle(
-                color: isUser
-                    ? colorScheme.onPrimaryContainer
-                    : colorScheme.onSecondaryContainer,
-                fontStyle: isStreaming ? FontStyle.italic : FontStyle.normal,
-              ),
-            ),
       ),
     );
   }

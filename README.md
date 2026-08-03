@@ -9,8 +9,7 @@ prompts, conversations, and documents never leave the device.
 ![Flutter](https://img.shields.io/badge/Flutter-3.41.0-02569B?logo=flutter)
 ![Platform](https://img.shields.io/badge/platform-Android-3DDC84?logo=android)
 ![License](https://img.shields.io/badge/license-MIT-green)
-<!-- CI badge — set OWNER/REPO to your GitHub path once pushed:
-![CI](https://github.com/OWNER/loki_llm/actions/workflows/ci.yml/badge.svg) -->
+![CI](https://github.com/LucknowAI/loxi_llm/actions/workflows/ci.yml/badge.svg)
 
 > **Status:** actively developed. Currently **Android only** (no iOS project yet).
 
@@ -124,6 +123,12 @@ Flutter · Riverpod · ObjectBox (incl. HNSW vector search) · `go_router` ·
 
 Third-party package licenses are listed in-app under **Settings → Open-source
 licenses**.
+
+## Contributing
+
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
+opening a PR (target branch: **`develop`**). See also
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and [SECURITY.md](SECURITY.md).
 
 ## License
 
