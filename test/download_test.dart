@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:loki_llm/features/models/data/model_catalog.dart';
 import 'package:loki_llm/features/models/domain/model.dart';
 import 'package:loki_llm/features/models/domain/model_status.dart';
+import 'package:loki_llm/features/models/presentation/models_notifier.dart';
 
 void main() {
   group('kCuratedModels catalog', () {
@@ -98,6 +99,29 @@ void main() {
         status: ModelStatus.downloaded,
       );
       expect(model.canLoad, isFalse);
+    });
+  });
+
+  group('isSupportedSideloadExtension', () {
+    test('accepts .gguf files', () {
+      expect(isSupportedSideloadExtension('phi3-mini.gguf'), isTrue);
+    });
+
+    test('is case-insensitive', () {
+      expect(isSupportedSideloadExtension('Model.GGUF'), isTrue);
+    });
+
+    test('rejects .task files (no backend supports MediaPipe bundles)', () {
+      expect(isSupportedSideloadExtension('gemma.task'), isFalse);
+    });
+
+    test('rejects unrelated extensions', () {
+      expect(isSupportedSideloadExtension('notes.txt'), isFalse);
+      expect(isSupportedSideloadExtension('archive.tar.gz'), isFalse);
+    });
+
+    test('rejects filenames without an extension', () {
+      expect(isSupportedSideloadExtension('README'), isFalse);
     });
   });
 }

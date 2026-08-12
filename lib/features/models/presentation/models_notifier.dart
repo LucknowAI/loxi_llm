@@ -10,6 +10,18 @@ import '../domain/model_status.dart';
 
 part 'models_notifier.g.dart';
 
+/// `gguf` has no registered Android MIME type, so `FileType.custom` +
+/// `allowedExtensions` fails there before the picker even opens. We use
+/// `FileType.any` and validate the extension ourselves.
+///
+/// `.task` (MediaPipe bundle) is rejected: `backendForModel` only returns
+/// `LlamaCppBackend`, which can't load it, since `MediaPipeBackend` was
+/// removed. Re-add `.task` once MediaPipe support returns.
+bool isSupportedSideloadExtension(String filename) {
+  final ext = filename.split('.').last.toLowerCase();
+  return ext == 'gguf';
+}
+
 @riverpod
 class ModelsNotifier extends _$ModelsNotifier {
   /// Transient live download speed in bytes/second, keyed by model id. Not
@@ -113,9 +125,8 @@ class ModelsNotifier extends _$ModelsNotifier {
   /// Sideload a model from device storage via file picker.
   Future<void> sideloadModel() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+      type: FileType.any,
       allowMultiple: false,
-      allowedExtensions: ['gguf', 'task'],
     );
     if (result == null || result.files.isEmpty) return;
 
@@ -124,8 +135,9 @@ class ModelsNotifier extends _$ModelsNotifier {
     if (path == null) return;
 
     final filename = file.name;
-    final ext = filename.split('.').last.toLowerCase();
-    final format = ext == 'task' ? 'task' : 'gguf';
+    if (!isSupportedSideloadExtension(filename)) {
+      throw const FormatException('Unsupported file type. Choose a .gguf file.');
+    }
     final sizeBytes = file.size > 0 ? file.size : (File(path).existsSync() ? File(path).lengthSync() : 0);
 
     final repo = ref.read(modelRepositoryProvider);
@@ -137,7 +149,6 @@ class ModelsNotifier extends _$ModelsNotifier {
       status: ModelStatus.downloaded,
       localPath: path,
       filename: filename,
-      format: format,
       downloadProgress: 1.0,
     );
     repo.save(model);

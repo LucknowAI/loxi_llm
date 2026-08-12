@@ -59,7 +59,17 @@ class ModelsScreen extends ConsumerWidget {
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.file_open),
         label: const Text('Sideload'),
-        onPressed: () => ref.read(modelsNotifierProvider.notifier).sideloadModel(),
+        onPressed: () async {
+          try {
+            await ref.read(modelsNotifierProvider.notifier).sideloadModel();
+          } on FormatException catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+              );
+            }
+          }
+        },
       ),
       body: modelsAsync.when(
         data: (models) => ListView.builder(
