@@ -22,6 +22,13 @@ After cloning, initialize submodules:
 git submodule update --init --recursive
 ```
 
+## AI coding workflow rules
+
+- Every piece of implementation work (bug fix, feature, chore) must be tracked by a GitHub issue in `LucknowAI/loxi_llm` and done on its own branch, named per `CONTRIBUTING.md` (`fix/<n>-slug`, `feature/<n>-slug`, `docs/<n>-slug`).
+- Branch directly off `develop` with `git checkout -b <branch> develop`, and check it out in the current working directory.
+- Do **not** use `git worktree` for this work — always switch branches in place with `git checkout`.
+- Reference the issue in commits (`Fixes #<n>`) and open the PR against `develop`, per `CONTRIBUTING.md`.
+
 ## Project summary
 
 **Loki LLM** is a Flutter app for on-device LLM inference on Android and iOS. It uses Riverpod for state, ObjectBox for persistence (including HNSW vector search), and `go_router` for navigation.
