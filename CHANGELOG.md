@@ -10,6 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Android: sideloading a `.gguf` model no longer throws `PlatformException` from `file_picker` — `.gguf` has no registered Android MIME type, so we now use `FileType.any` and validate the extension ourselves ([#7](https://github.com/LucknowAI/loxi_llm/issues/7))
 - Sideload no longer accepts `.task` files — no backend can load MediaPipe bundles since `MediaPipeBackend` was removed, so accepting them only led to a confusing load failure later ([#40](https://github.com/LucknowAI/loxi_llm/issues/40))
+- Android: fixed a native crash (`SIGABRT`, "Unexpected empty grammar stack") that could abort the app right after an agent tool call completed — the sampler chain applied the tool-call grammar after top_k/top_p pruning, which could discard the model's only grammar-valid continuation before grammar saw it. The grammar is now applied separately, sampling normally first and only re-sampling grammar-first when needed, matching llama.cpp's own reference sampler ([#43](https://github.com/LucknowAI/loxi_llm/issues/43))
 
 ## [1.1.0] — 2026-08-03
 
