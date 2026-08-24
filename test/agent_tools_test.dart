@@ -3,6 +3,7 @@ import 'package:loki_llm/features/agent/agent_model_support.dart';
 import 'package:loki_llm/features/agent/tools/calculator_tool.dart';
 import 'package:loki_llm/features/agent/tools/datetime_tool.dart';
 import 'package:loki_llm/features/agent/tools/document_search_tool.dart';
+import 'package:loki_llm/features/agent/tools/get_settings_tool.dart';
 import 'package:loki_llm/features/agent/tools/list_documents_tool.dart';
 import 'package:loki_llm/features/agent/tools/recall_memory_tool.dart';
 import 'package:loki_llm/features/agent/tools/unit_convert_tool.dart';
@@ -224,13 +225,31 @@ void main() {
     });
   });
 
+  group('GetSettingsTool', () {
+    test('reports chunk size and top K', () async {
+      final tool = GetSettingsTool(chunkSize: 300, topK: 3);
+      final result = await tool.call({});
+      expect(result, contains('300'));
+      expect(result, contains('3'));
+    });
+
+    test('takes no arguments', () {
+      expect(GetSettingsTool(chunkSize: 300, topK: 3).parameterSchema, isEmpty);
+    });
+  });
+
   group('ToolCallGrammar', () {
     test('build includes registered tool names', () {
-      final registry = ToolRegistry([CalculatorTool(), UnitConvertTool()]);
+      final registry = ToolRegistry([
+        CalculatorTool(),
+        UnitConvertTool(),
+        GetSettingsTool(chunkSize: 300, topK: 3),
+      ]);
       final grammar = ToolCallGrammar.build(registry);
       expect(grammar, isNotNull);
       expect(grammar, contains('calculator'));
       expect(grammar, contains('unit_convert'));
+      expect(grammar, contains('get_settings'));
     });
 
     test('build returns null for empty registry', () {

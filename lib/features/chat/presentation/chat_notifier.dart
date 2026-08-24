@@ -380,6 +380,7 @@ class ChatNotifier extends _$ChatNotifier {
           return embService.embedQuery(q);
         },
         topK: settings.topK,
+        chunkSize: settings.chunkSize,
         summary: summary,
         historyWindow: _maxHistoryMessages,
       ),
