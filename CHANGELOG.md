@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Agent tool: `get_settings` — reports the current RAG chunk size and top-K so the model can explain retrieval behavior to the user ([#12](https://github.com/LucknowAI/loxi_llm/issues/12))
+
 ### Fixed
 
 - Android: sideloading a `.gguf` model no longer throws `PlatformException` from `file_picker` — `.gguf` has no registered Android MIME type, so we now use `FileType.any` and validate the extension ourselves ([#7](https://github.com/LucknowAI/loxi_llm/issues/7))

@@ -102,7 +102,7 @@ void main() {
       addTearDown(container.dispose);
 
       final settings = container.read(settingsNotifierProvider);
-      expect(settings.enabledToolNames.length, equals(6));
+      expect(settings.enabledToolNames.length, equals(7));
       expect(settings.enabledToolNames, contains('calculator'));
       expect(settings.enabledToolNames, contains('unit_convert'));
     });
