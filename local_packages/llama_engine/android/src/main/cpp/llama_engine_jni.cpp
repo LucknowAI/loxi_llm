@@ -4,13 +4,16 @@
 // MIT-licensed examples. Provides: model load/free, incremental (one-token-per
 // call) streaming generation with a hold-back stop-sequence trim, a batch-safe
 // chunked prompt decode, per-turn KV reset, a penalty/top-k/top-p/temp sampler
-// chain, and a lock-free stop flag.
+// chain with a separately-applied lazy GBNF grammar (see sampleNextToken), and
+// a lock-free stop flag.
 
 #include <jni.h>
 #include <string>
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <cmath>
+#include <stdexcept>
 #include <android/log.h>
 
 #include "llama.h"
@@ -24,7 +27,8 @@
 static llama_model* g_model = nullptr;
 static llama_context* g_context = nullptr;
 static const llama_vocab* g_vocab = nullptr;
-static llama_sampler* g_sampler = nullptr;
+static llama_sampler* g_sampler = nullptr;  // penalties -> top_k -> top_p -> temp -> dist (no grammar)
+static llama_sampler* g_grammar = nullptr;  // lazy GBNF grammar, applied separately by sampleNextToken
 static std::mutex g_mutex;
 static std::atomic<bool> g_should_stop{false};
 
@@ -122,12 +126,30 @@ static size_t safe_emit_end(const GenState& gen) {
     return utf8_valid_prefix_len(gen.generated.substr(0, end));
 }
 
-// Build the sampler chain: penalties -> top_k -> top_p -> temp -> [grammar] -> dist.
+// Build the sampler chain: penalties -> top_k -> top_p -> temp -> dist.
+//
+// Grammar is deliberately kept OUT of this chain and applied separately by
+// sampleNextToken(). Chaining it after top_k/top_p (as before) let those
+// truncate the candidate pool down to the model's highest-probability
+// continuations before grammar ever saw them — so once a grammar-constrained
+// generation (e.g. a completed tool-call block) only had one valid
+// continuation left (an end-of-generation token), and that token wasn't
+// among the surviving top_k/top_p candidates, grammar had nothing valid to
+// select from. The sampler still forced a pick, producing a token grammar's
+// own accept() then rejected, which threw an uncaught native exception and
+// aborted the whole app (see #43). llama.cpp's own reference sampler
+// (common/sampling.cpp: common_sampler_sample) avoids this by sampling
+// without grammar first and only re-sampling grammar-first when the natural
+// pick doesn't satisfy it — sampleNextToken mirrors that.
 static void rebuildSampler(float temperature, float top_p, int top_k,
                            float repeat_penalty, const char* grammar_str) {
     if (g_sampler) {
         llama_sampler_free(g_sampler);
         g_sampler = nullptr;
+    }
+    if (g_grammar) {
+        llama_sampler_free(g_grammar);
+        g_grammar = nullptr;
     }
     auto params = llama_sampler_chain_default_params();
     g_sampler = llama_sampler_chain_init(params);
@@ -136,21 +158,70 @@ static void rebuildSampler(float temperature, float top_p, int top_k,
     llama_sampler_chain_add(g_sampler, llama_sampler_init_top_k(top_k));
     llama_sampler_chain_add(g_sampler, llama_sampler_init_top_p(top_p, 1));
     llama_sampler_chain_add(g_sampler, llama_sampler_init_temp(temperature));
+    llama_sampler_chain_add(g_sampler, llama_sampler_init_dist(1234));
+
     if (grammar_str != nullptr && grammar_str[0] != '\0' && g_vocab != nullptr) {
         // Use trigger *words* (auto regex-escaped by llama.cpp). Do NOT pass raw
         // patterns like `{"name"` — `{` is a regex metacharacter and aborts.
         static const char* kTriggers[] = {"```tool_call"};
-        llama_sampler* grmr = llama_sampler_init_grammar_lazy(
+        g_grammar = llama_sampler_init_grammar_lazy(
             g_vocab, grammar_str, "root", kTriggers,
             sizeof(kTriggers) / sizeof(kTriggers[0]), nullptr, 0);
-        if (grmr != nullptr) {
-            llama_sampler_chain_add(g_sampler, grmr);
+        if (g_grammar != nullptr) {
             LOGI("Lazy GBNF grammar attached");
         } else {
             LOGE("Failed to parse GBNF grammar — continuing without constraints");
         }
     }
-    llama_sampler_chain_add(g_sampler, llama_sampler_init_dist(1234));
+}
+
+// Sample the next token, honoring g_grammar (if set) without letting
+// top_k/top_p prune away its only valid continuation first. Mirrors
+// llama.cpp's common_sampler_sample: sample via the plain chain, verify the
+// pick against grammar, and only pay for a grammar-first re-sample when the
+// natural pick doesn't satisfy it. The try/catch is defense in depth — with
+// correct ordering this should never throw, but a native exception here must
+// never be allowed to abort the whole app (see #43).
+static llama_token sampleNextToken() {
+    try {
+        const int n_vocab = llama_vocab_n_tokens(g_vocab);
+        const float* logits = llama_get_logits_ith(g_context, -1);
+
+        std::vector<llama_token_data> cur(n_vocab);
+        for (int i = 0; i < n_vocab; i++) {
+            cur[i] = llama_token_data{i, logits[i], 0.0f};
+        }
+        llama_token_data_array cur_p = {cur.data(), cur.size(), -1, false};
+
+        llama_sampler_apply(g_sampler, &cur_p);
+        llama_token id = cur_p.data[cur_p.selected].id;
+
+        if (g_grammar != nullptr) {
+            llama_token_data single = {id, 1.0f, 0.0f};
+            llama_token_data_array single_arr = {&single, 1, -1, false};
+            llama_sampler_apply(g_grammar, &single_arr);
+            const bool valid = single_arr.data[0].logit != -INFINITY;
+
+            if (!valid) {
+                // Resample: apply grammar before top_k/top_p this time so its
+                // only valid continuation can't be pruned away first.
+                for (int i = 0; i < n_vocab; i++) {
+                    cur[i] = llama_token_data{i, logits[i], 0.0f};
+                }
+                cur_p = {cur.data(), cur.size(), -1, false};
+                llama_sampler_apply(g_grammar, &cur_p);
+                llama_sampler_apply(g_sampler, &cur_p);
+                id = cur_p.data[cur_p.selected].id;
+            }
+            llama_sampler_accept(g_grammar, id);
+        }
+
+        llama_sampler_accept(g_sampler, id);
+        return id;
+    } catch (const std::exception& e) {
+        LOGE("sampleNextToken: native sampling error, ending generation: %s", e.what());
+        return LLAMA_TOKEN_NULL;
+    }
 }
 
 extern "C" {
@@ -163,6 +234,7 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeInitModel(
 
     // Free any previously loaded model.
     if (g_sampler) { llama_sampler_free(g_sampler); g_sampler = nullptr; }
+    if (g_grammar) { llama_sampler_free(g_grammar); g_grammar = nullptr; }
     if (g_context) { llama_free(g_context); g_context = nullptr; }
     if (g_model) { llama_free_model(g_model); g_model = nullptr; }
     g_gen.reset();
@@ -300,8 +372,8 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamNext(
         return end_with_flush();
     }
 
-    llama_token new_token = llama_sampler_sample(g_sampler, g_context, -1);
-    if (llama_vocab_is_eog(g_vocab, new_token)) {
+    llama_token new_token = sampleNextToken();
+    if (new_token == LLAMA_TOKEN_NULL || llama_vocab_is_eog(g_vocab, new_token)) {
         return end_with_flush();
     }
 
@@ -363,6 +435,7 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeFreeModel(
     std::lock_guard<std::mutex> lock(g_mutex);
     g_gen.reset();
     if (g_sampler) { llama_sampler_free(g_sampler); g_sampler = nullptr; }
+    if (g_grammar) { llama_sampler_free(g_grammar); g_grammar = nullptr; }
     if (g_context) { llama_free(g_context); g_context = nullptr; }
     if (g_model) { llama_free_model(g_model); g_model = nullptr; }
     g_vocab = nullptr;
