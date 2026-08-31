@@ -12,7 +12,7 @@ final class LlamaCppBackend extends InferenceBackend {
   bool get isLoaded => _llama.isModelLoaded;
 
   @override
-  Future<void> loadModel(String path) async {
+  Future<void> loadModel(String path, {String? mmprojPath}) async {
     final success = await _llama.loadModel(
       LlamaConfig(
         modelPath: path,
@@ -48,6 +48,7 @@ final class LlamaCppBackend extends InferenceBackend {
     String prompt, {
     List<String> stopSequences = const [],
     String? grammar,
+    List<String> imagePaths = const [],
   }) {
     return _llama.generateStream(
       GenerationParams(
