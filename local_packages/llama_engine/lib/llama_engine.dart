@@ -9,6 +9,7 @@ class LlamaConfig {
     this.nThreads = 4,
     this.contextSize = 2048,
     this.batchSize = 512,
+    this.mmprojPath,
   });
 
   final String modelPath;
@@ -16,11 +17,16 @@ class LlamaConfig {
   final int contextSize;
   final int batchSize;
 
+  /// Path to a companion mmproj vision projector file. When non-null, the
+  /// engine loads it alongside [modelPath] and enables vision input.
+  final String? mmprojPath;
+
   Map<String, dynamic> toMap() => {
         'modelPath': modelPath,
         'nThreads': nThreads,
         'contextSize': contextSize,
         'batchSize': batchSize,
+        if (mmprojPath != null) 'mmprojPath': mmprojPath,
       };
 }
 
@@ -35,6 +41,7 @@ class GenerationParams {
     this.repeatPenalty = 1.1,
     this.stopSequences = const [],
     this.grammar,
+    this.imagePaths = const [],
   });
 
   final String prompt;
@@ -50,6 +57,10 @@ class GenerationParams {
   /// Reserved for GBNF constrained decoding (lazy grammar on Android).
   final String? grammar;
 
+  /// File paths to images to ground the response in. Empty for text-only
+  /// generation.
+  final List<String> imagePaths;
+
   Map<String, dynamic> toMap() => {
         'prompt': prompt,
         'maxTokens': maxTokens,
@@ -59,6 +70,7 @@ class GenerationParams {
         'repeatPenalty': repeatPenalty,
         'stopSequences': stopSequences,
         if (grammar != null) 'grammar': grammar,
+        'imagePaths': imagePaths,
       };
 }
 
@@ -131,5 +143,14 @@ class LlamaEngine {
   Future<void> unloadModel() async {
     await _channel.invokeMethod<void>('unloadModel');
     _loaded = false;
+  }
+
+  /// Whether the currently loaded model can accept images — backed by a
+  /// native `mtmd_support_vision()` check, not just "was an mmproj path
+  /// supplied". `false` when no model is loaded.
+  Future<bool> supportsVision() async {
+    if (!_loaded) return false;
+    final result = await _channel.invokeMethod<bool>('supportsVision');
+    return result ?? false;
   }
 }
