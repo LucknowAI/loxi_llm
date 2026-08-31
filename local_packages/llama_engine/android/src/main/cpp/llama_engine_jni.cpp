@@ -276,6 +276,8 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeInitModel(
         const char* mmproj_cstr = env->GetStringUTFChars(mmproj_path, nullptr);
         mtmd_context_params mtmd_params = mtmd_context_params_default();
         mtmd_params.use_gpu = false;
+        mtmd_params.n_threads = n_threads;
+        mtmd_params.print_timings = false;
         g_mtmd_ctx = mtmd_init_from_file(mmproj_cstr, g_model, mtmd_params);
         env->ReleaseStringUTFChars(mmproj_path, mmproj_cstr);
         if (g_mtmd_ctx == nullptr) {
@@ -296,7 +298,13 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeSupportsVision(
     return (g_mtmd_ctx != nullptr && mtmd_support_vision(g_mtmd_ctx)) ? JNI_TRUE : JNI_FALSE;
 }
 
-JNIEXPORT void JNICALL
+JNIEXPORT jstring JNICALL
+Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeMediaMarker(
+    JNIEnv* env, jobject) {
+    return env->NewStringUTF(mtmd_default_marker());
+}
+
+JNIEXPORT jboolean JNICALL
 Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
     JNIEnv* env, jobject, jstring prompt,
     jfloat temperature, jfloat top_p, jint top_k,
@@ -306,7 +314,7 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
 
     if (!g_model || !g_context || !g_vocab) {
         LOGE("nativeGenerateStreamInit: model not loaded");
-        return;
+        return JNI_FALSE;
     }
 
     const std::vector<std::string> stops = jStringArrayToVector(env, stop_sequences);
@@ -330,6 +338,10 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
     const int n_ctx = (int) llama_n_ctx(g_context);
     int n_pos_after_prompt = 0;
 
+    if (!image_path_vec.empty() && g_mtmd_ctx == nullptr) {
+        LOGE("Images provided but no mmproj loaded — falling back to text-only");
+    }
+
     if (!image_path_vec.empty() && g_mtmd_ctx != nullptr) {
         // Multimodal priming: build bitmaps from the given image files, tokenize
         // prompt+images together (the prompt must already contain the marker
@@ -351,7 +363,7 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
 
         if (bitmap_error) {
             for (auto* bmp : bitmaps) mtmd_bitmap_free(bmp);
-            return;
+            return JNI_FALSE;
         }
 
         mtmd_input_text input_text;
@@ -372,7 +384,17 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
         if (tok_ret != 0) {
             LOGE("Failed to tokenize multimodal prompt, ret=%d", tok_ret);
             mtmd_input_chunks_free(chunks);
-            return;
+            return JNI_FALSE;
+        }
+
+        // Context-window pre-check: make sure the primed prompt plus
+        // generation headroom will actually fit before priming the KV cache.
+        const int n_pos_needed = (int) mtmd_helper_get_n_pos(chunks);
+        if (n_pos_needed + max_tokens > n_ctx) {
+            LOGE("Multimodal prompt+image too large for context: needs %d + %d headroom, have n_ctx=%d",
+                 n_pos_needed, max_tokens, n_ctx);
+            mtmd_input_chunks_free(chunks);
+            return JNI_FALSE;
         }
 
         llama_pos new_n_past = 0;
@@ -384,7 +406,7 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
         mtmd_input_chunks_free(chunks);
         if (eval_ret != 0) {
             LOGE("Failed to eval multimodal prompt, ret=%d", eval_ret);
-            return;
+            return JNI_FALSE;
         }
 
         n_pos_after_prompt = (int) new_n_past;
@@ -394,7 +416,7 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
         std::vector<llama_token> tokens(n_prompt);
         if (llama_tokenize(g_vocab, text.c_str(), text.size(), tokens.data(), tokens.size(), true, true) < 0) {
             LOGE("Failed to tokenize prompt");
-            return;
+            return JNI_FALSE;
         }
 
         // Keep the prompt within the context window, reserving room to generate.
@@ -414,7 +436,7 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
             llama_batch batch = llama_batch_get_one(tokens.data() + i, chunk);
             if (llama_decode(g_context, batch) != 0) {
                 LOGE("Failed to decode prompt chunk at %zu", i);
-                return;
+                return JNI_FALSE;
             }
         }
 
@@ -433,6 +455,7 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
     g_gen.stops = stops;
     g_gen.max_stop_len = longestStopLen(stops);
     LOGI("Stream init: %d prompt tokens, up to %d generated", g_gen.n_pos, max_tokens);
+    return JNI_TRUE;
 }
 
 JNIEXPORT jstring JNICALL

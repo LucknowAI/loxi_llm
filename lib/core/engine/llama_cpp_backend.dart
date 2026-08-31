@@ -34,8 +34,12 @@ final class LlamaCppBackend extends InferenceBackend {
     }
     try {
       _supportsVision = await _llama.supportsVision();
-    } catch (e) {
-      await _llama.unloadModel();
+    } catch (_) {
+      try {
+        await _llama.unloadModel();
+      } catch (_) {
+        // Best-effort cleanup; the original exception below is what matters.
+      }
       rethrow;
     }
   }

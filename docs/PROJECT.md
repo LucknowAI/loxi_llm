@@ -253,6 +253,10 @@ erDiagram
         string huggingFaceRepo
         string filename
         string format
+        string mmprojFilename
+        string mmprojHuggingFaceRepo
+        string mmprojLocalPath
+        int mmprojSizeBytes
     }
 
     CONVERSATION {
@@ -270,6 +274,7 @@ erDiagram
         string role
         string content
         int createdAtMs
+        string imagePath
     }
 
     DOCUMENT {
@@ -331,6 +336,10 @@ flowchart LR
     TASK -- yes --> MEDIA
     TASK -- no --> LLAMA
 ```
+
+### Multimodal (foundation layer)
+
+`Model.mmprojFilename`, `mmprojHuggingFaceRepo`, `mmprojLocalPath`, and `mmprojSizeBytes`, plus `Message.imagePath`, exist to support attaching an image to a chat message and loading a companion mmproj vision projector alongside a base GGUF model. `isMultimodalModel()` (in `lib/features/models/domain/model.dart`) is the single capability signal for a model — there is no separate boolean, it's simply whether `mmprojFilename` is set. `InferenceBackend` was extended with an optional `mmprojPath` param on `loadModel`, an optional `imagePaths` param on `generate`, and a `supportsVision` getter, populated from a native capability check and cached at load time rather than queried live. The native `llama_engine` plugin now wires llama.cpp's vendored `mtmd` toolkit into its JNI bridge to actually load the projector and prime images into the KV cache before generation begins. This is plumbing only — nothing in the app UI calls it yet, since `inference_provider.dart` doesn't pass `mmprojPath` to `loadModel` today; a future piece of work adds the chat UI and catalog entries that make it reachable.
 
 ---
 
@@ -493,6 +502,8 @@ graph TD
 | `widget_test.dart` | App smoke test — renders without crash | Stubs ObjectBox + prefs |
 | `engine_test.dart` | `InferenceBackend` abstract contract; `backendForModel()` routing | Pure Dart — no native plugins needed |
 | `domain_test.dart` | `Model`, `Message`, `Conversation` freezed constructors, computed getters, `copyWith` | Pure Dart |
+| `model_test.dart` | `Model` multimodal fields (`mmprojFilename` etc.), `isMultimodalModel()` | Pure Dart |
+| `message_test.dart` | `Message.imagePath` field, default/round-trip/`copyWith` behavior | Pure Dart |
 | `chat_test.dart` | `_buildPrompt` output, streaming state transitions, auto-title logic | Mocks inference backend |
 | `embedding_test.dart` | `EmbeddingService` init, `embedQuery` vs `embedPassage` prefix, cosine similarity | Requires ONNX asset in test runner |
 | `rag_test.dart` | Full document ingestion pipeline, `findSimilar` returns top-k nearest chunks | Uses ObjectBox in-memory config |
@@ -500,6 +511,7 @@ graph TD
 | `settings_test.dart` | `SettingsNotifier` defaults, `setChunkSize`, `setTopK` persist correctly | Mocks SharedPreferences |
 | `onboarding_test.dart` | `onboarding_complete` flag read on cold start, written after `_finish()` | Mocks SharedPreferences |
 | `polish_test.dart` | `recommendationBadge` values, RAM guard dialog threshold | Widget test for dialog |
+| `local_packages/llama_engine/test/llama_engine_test.dart` | `LlamaConfig`/`GenerationParams` `toMap()` serialization for multimodal fields | Separate package — run via `cd local_packages/llama_engine && flutter test` |
 
 **Run all tests:**
 ```bash

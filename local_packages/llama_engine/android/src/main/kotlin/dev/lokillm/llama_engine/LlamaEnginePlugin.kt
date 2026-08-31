@@ -64,6 +64,12 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     mainHandler.post { result.success(supported) }
                 }
             }
+            "mediaMarker" -> {
+                executor.execute {
+                    val marker = nativeMediaMarker()
+                    mainHandler.post { result.success(marker) }
+                }
+            }
             "stopGeneration" -> {
                 nativeStopGeneration()
                 result.success(null)
@@ -133,10 +139,21 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
         executor.execute {
             try {
-                nativeGenerateStreamInit(
+                val initOk = nativeGenerateStreamInit(
                     prompt, temperature, topP, topK, maxTokens, repeatPenalty,
                     stopSequences, grammar, imagePaths
                 )
+                if (!initOk) {
+                    mainHandler.post {
+                        resolvedSink.error(
+                            "GENERATE_INIT_FAILED",
+                            "Failed to initialize generation (see native logs)",
+                            null
+                        )
+                        result.error("GENERATE_INIT_FAILED", "Failed to initialize generation", null)
+                    }
+                    return@execute
+                }
                 while (true) {
                     val token = nativeGenerateStreamNext() ?: break
                     mainHandler.post { resolvedSink.success(token) }
@@ -165,11 +182,13 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
     private external fun nativeSupportsVision(): Boolean
 
+    private external fun nativeMediaMarker(): String
+
     private external fun nativeGenerateStreamInit(
         prompt: String, temperature: Float, topP: Float, topK: Int,
         maxTokens: Int, repeatPenalty: Float, stopSequences: Array<String>,
         grammar: String?, imagePaths: Array<String>,
-    )
+    ): Boolean
 
     private external fun nativeGenerateStreamNext(): String?
     private external fun nativeGenerateStreamEnd()

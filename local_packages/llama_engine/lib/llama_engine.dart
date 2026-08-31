@@ -153,4 +153,12 @@ class LlamaEngine {
     final result = await _channel.invokeMethod<bool>('supportsVision');
     return result ?? false;
   }
+
+  /// The literal marker string a prompt must contain (once, per attached
+  /// image) before an image can be included in `GenerationParams.imagePaths`.
+  /// Backed by the native library's own `mtmd_default_marker()` rather than
+  /// a hardcoded literal, so it can never drift from what the native layer
+  /// actually expects.
+  Future<String> mediaMarker() =>
+      _channel.invokeMethod<String>('mediaMarker').then((v) => v ?? '');
 }
