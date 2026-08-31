@@ -23,17 +23,28 @@ set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${LLAMA_CPP_DIR} build-llama)
 
+# tools/mtmd is added directly (not via LLAMA_BUILD_TOOLS, which would pull in
+# llama.cpp's entire tools/ directory — benchmarks, quantize CLI, etc. — none
+# of which we want in a mobile build). It expects LLAMA_INSTALL_VERSION from
+# the root CMakeLists.txt's own scope, which a sibling add_subdirectory call
+# doesn't inherit, so it's set here as a harmless placeholder (we never run
+# install() targets in an Android Gradle/CMake build).
+set(LLAMA_INSTALL_VERSION 0.0.0)
+add_subdirectory(${LLAMA_CPP_DIR}/tools/mtmd build-mtmd)
+
 add_library(llama_engine_jni SHARED llama_engine_jni.cpp)
 
 target_include_directories(llama_engine_jni PRIVATE
     ${LLAMA_CPP_DIR}/include
     ${LLAMA_CPP_DIR}/ggml/include
+    ${LLAMA_CPP_DIR}/tools/mtmd
 )
 
 find_library(log-lib log)
 
 target_link_libraries(llama_engine_jni
     llama
+    mtmd
     ${log-lib}
 )
 
