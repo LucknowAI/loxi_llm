@@ -5,7 +5,7 @@
   "entities": [
     {
       "id": "1:1939217860881988310",
-      "lastPropertyId": "11:2156050348572104246",
+      "lastPropertyId": "15:6680436700298544288",
       "name": "ModelEntity",
       "properties": [
         {
@@ -63,6 +63,26 @@
           "id": "11:2156050348572104246",
           "name": "format",
           "type": 9
+        },
+        {
+          "id": "12:4426398186552256417",
+          "name": "mmprojFilename",
+          "type": 9
+        },
+        {
+          "id": "13:5046037330233970023",
+          "name": "mmprojHuggingFaceRepo",
+          "type": 9
+        },
+        {
+          "id": "14:559502300986289779",
+          "name": "mmprojLocalPath",
+          "type": 9
+        },
+        {
+          "id": "15:6680436700298544288",
+          "name": "mmprojSizeBytes",
+          "type": 6
         }
       ],
       "relations": []
