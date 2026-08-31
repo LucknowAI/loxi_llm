@@ -11,6 +11,13 @@ final class LlamaCppBackend extends InferenceBackend {
   @override
   bool get isLoaded => _llama.isModelLoaded;
 
+  // Cached at loadModel time — see the class doc comment above for why this
+  // isn't a live native query on every access.
+  bool _supportsVision = false;
+
+  @override
+  bool get supportsVision => _supportsVision;
+
   @override
   Future<void> loadModel(String path, {String? mmprojPath}) async {
     final success = await _llama.loadModel(
@@ -19,11 +26,13 @@ final class LlamaCppBackend extends InferenceBackend {
         nThreads: 4,
         contextSize: 2048,
         batchSize: 512,
+        mmprojPath: mmprojPath,
       ),
     );
     if (!success) {
       throw StateError('LlamaCppBackend: failed to load model at $path');
     }
+    _supportsVision = await _llama.supportsVision();
   }
 
   // Generation tuning — single source of truth so [generationParams] always
@@ -57,6 +66,7 @@ final class LlamaCppBackend extends InferenceBackend {
         temperature: _temperature,
         stopSequences: stopSequences,
         grammar: grammar,
+        imagePaths: imagePaths,
       ),
     );
   }
@@ -69,5 +79,6 @@ final class LlamaCppBackend extends InferenceBackend {
   @override
   Future<void> unloadModel() async {
     await _llama.unloadModel();
+    _supportsVision = false;
   }
 }
