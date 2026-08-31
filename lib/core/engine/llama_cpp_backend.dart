@@ -32,7 +32,12 @@ final class LlamaCppBackend extends InferenceBackend {
     if (!success) {
       throw StateError('LlamaCppBackend: failed to load model at $path');
     }
-    _supportsVision = await _llama.supportsVision();
+    try {
+      _supportsVision = await _llama.supportsVision();
+    } catch (e) {
+      await _llama.unloadModel();
+      rethrow;
+    }
   }
 
   // Generation tuning — single source of truth so [generationParams] always
