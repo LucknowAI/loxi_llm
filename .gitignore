@@ -57,3 +57,4 @@ docs/superpowers/
 # Native build caches (CMake .cxx + vendored plugin build dirs)
 **/.cxx/
 local_packages/*/android/build/
+local_packages/*/build/
