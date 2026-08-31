@@ -58,6 +58,12 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         when (call.method) {
             "loadModel" -> loadModel(call, result)
             "generateStream" -> generateStream(call, result)
+            "supportsVision" -> {
+                executor.execute {
+                    val supported = nativeSupportsVision()
+                    mainHandler.post { result.success(supported) }
+                }
+            }
             "stopGeneration" -> {
                 nativeStopGeneration()
                 result.success(null)
@@ -81,8 +87,9 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         val nThreads = call.argument<Int>("nThreads") ?: 4
         val contextSize = call.argument<Int>("contextSize") ?: 2048
         val batchSize = call.argument<Int>("batchSize") ?: 512
+        val mmprojPath = call.argument<String>("mmprojPath")
         executor.execute {
-            val ok = nativeInitModel(path, nThreads, contextSize, batchSize)
+            val ok = nativeInitModel(path, nThreads, contextSize, batchSize, mmprojPath)
             mainHandler.post { result.success(ok) }
         }
     }
@@ -101,6 +108,8 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         val stopSequences =
             (call.argument<List<String>>("stopSequences") ?: emptyList()).toTypedArray()
         val grammar = call.argument<String>("grammar")
+        val imagePaths =
+            (call.argument<List<String>>("imagePaths") ?: emptyList()).toTypedArray()
 
         // Wait briefly for the EventChannel's onListen to install the sink,
         // since listen and invoke ride separate channels and can reorder.
@@ -126,7 +135,7 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             try {
                 nativeGenerateStreamInit(
                     prompt, temperature, topP, topK, maxTokens, repeatPenalty,
-                    stopSequences, grammar
+                    stopSequences, grammar, imagePaths
                 )
                 while (true) {
                     val token = nativeGenerateStreamNext() ?: break
@@ -150,13 +159,16 @@ class LlamaEnginePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
     // --- JNI ---
     private external fun nativeInitModel(
-        modelPath: String, nThreads: Int, contextSize: Int, batchSize: Int
+        modelPath: String, nThreads: Int, contextSize: Int, batchSize: Int,
+        mmprojPath: String?,
     ): Boolean
+
+    private external fun nativeSupportsVision(): Boolean
 
     private external fun nativeGenerateStreamInit(
         prompt: String, temperature: Float, topP: Float, topK: Int,
         maxTokens: Int, repeatPenalty: Float, stopSequences: Array<String>,
-        grammar: String?,
+        grammar: String?, imagePaths: Array<String>,
     )
 
     private external fun nativeGenerateStreamNext(): String?
