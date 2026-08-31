@@ -153,7 +153,7 @@
     },
     {
       "id": "3:1451929269734712640",
-      "lastPropertyId": "6:2611781906065260571",
+      "lastPropertyId": "7:4538193868689740854",
       "name": "MessageEntity",
       "properties": [
         {
@@ -188,6 +188,11 @@
           "id": "6:2611781906065260571",
           "name": "createdAtMs",
           "type": 6
+        },
+        {
+          "id": "7:4538193868689740854",
+          "name": "imagePath",
+          "type": 9
         }
       ],
       "relations": []
