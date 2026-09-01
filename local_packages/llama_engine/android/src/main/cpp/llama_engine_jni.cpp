@@ -319,9 +319,18 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
 
     const std::vector<std::string> stops = jStringArrayToVector(env, stop_sequences);
 
+    // Rebuilt here, immediately adjacent to acquiring grammar_cstr, rather
+    // than after the prompt is processed: the sampler chain doesn't depend
+    // on anything computed below, and holding a JNI string across several
+    // early-return paths (tokenize/decode/eval failures) leaked it on every
+    // one of them.
     const char* grammar_cstr = nullptr;
     if (grammar != nullptr) {
         grammar_cstr = env->GetStringUTFChars(grammar, nullptr);
+    }
+    rebuildSampler(temperature, top_p, top_k, repeat_penalty, grammar_cstr);
+    if (grammar_cstr != nullptr) {
+        env->ReleaseStringUTFChars(grammar, grammar_cstr);
     }
 
     g_should_stop = false;
@@ -441,11 +450,6 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
         }
 
         n_pos_after_prompt = (int) tokens.size();
-    }
-
-    rebuildSampler(temperature, top_p, top_k, repeat_penalty, grammar_cstr);
-    if (grammar_cstr != nullptr) {
-        env->ReleaseStringUTFChars(grammar, grammar_cstr);
     }
 
     g_gen.active = true;
