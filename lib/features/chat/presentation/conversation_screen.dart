@@ -1,10 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../../core/providers/download_provider.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../../../core/providers/tts_provider.dart';
 import '../../agent/agent_model_support.dart';
+import '../../models/domain/model.dart';
 import '../application/conversation_markdown_exporter.dart';
 import '../data/conversation_repository.dart';
 import '../domain/conversation.dart';
@@ -30,6 +35,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   /// Message id currently being read aloud, if any.
   String? _speakingMessageId;
+
+  /// Path to an image attached to the message being composed, if any. Copied
+  /// into app storage so it survives independently of the picker's temp file.
+  String? _attachedImagePath;
 
   @override
   void initState() {
@@ -60,12 +69,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
-    if (text.isEmpty) return;
+    final imagePath = _attachedImagePath;
+    if (text.isEmpty && imagePath == null) return;
     _textController.clear();
+    setState(() => _attachedImagePath = null);
     try {
       await ref
           .read(chatNotifierProvider(widget.conversationId).notifier)
-          .send(text);
+          .send(text, imagePath: imagePath);
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
@@ -77,6 +88,56 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         );
       }
     }
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+
+    final storage = ref.read(fileStorageServiceProvider);
+    final filename =
+        'img-${DateTime.now().millisecondsSinceEpoch}${_extensionOf(picked.path)}';
+    final destPath = await storage.getImagePath(filename);
+    await File(picked.path).copy(destPath);
+
+    if (mounted) setState(() => _attachedImagePath = destPath);
+  }
+
+  String _extensionOf(String path) {
+    final dot = path.lastIndexOf('.');
+    return dot == -1 ? '.jpg' : path.substring(dot);
+  }
+
+  void _showAttachmentSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Take photo'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _pickImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _editSystemPrompt() {
@@ -203,6 +264,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final isToolsEnabled = currentConv?.toolsEnabled ?? false;
     final loadedModel = ref.watch(inferenceNotifierProvider.notifier).loadedModel;
     final agentCapable = isAgentCapableModel(loadedModel?.id);
+    final canAttachImage = loadedModel != null && isMultimodalModel(loadedModel);
 
     final isModelLoaded = backendAsync.valueOrNull != null;
     final isStreaming = chatAsync.valueOrNull?.isStreaming ?? false;
@@ -366,6 +428,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                     final msg = messages[index];
                     return MessageBubble(
                       content: msg.content,
+                      imagePath: msg.imagePath,
                       isUser: msg.role == MessageRole.user,
                       isStreaming: false,
                       onCopy: () => _copyText(
@@ -420,43 +483,88 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 top: BorderSide(color: Theme.of(context).dividerColor),
               ),
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    decoration: const InputDecoration(
-                      hintText: 'Type a message...',
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                if (_attachedImagePath != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            File(_attachedImagePath!),
+                            width: 64,
+                            height: 64,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        Positioned(
+                          top: -8,
+                          right: -8,
+                          child: IconButton(
+                            icon: const Icon(Icons.cancel, size: 20),
+                            tooltip: 'Remove image',
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () =>
+                                setState(() => _attachedImagePath = null),
+                          ),
+                        ),
+                      ],
                     ),
-                    minLines: 1,
-                    maxLines: 4,
-                    onSubmitted: (_) => _sendMessage(),
                   ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.image_outlined),
+                      tooltip: canAttachImage
+                          ? 'Attach image'
+                          : 'Attaching images requires a vision-capable '
+                              'model (e.g. Gemma 4)',
+                      onPressed: canAttachImage ? _showAttachmentSheet : null,
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: _textController,
+                        decoration: const InputDecoration(
+                          hintText: 'Type a message...',
+                          border: OutlineInputBorder(),
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        minLines: 1,
+                        maxLines: 4,
+                        onSubmitted: (_) => _sendMessage(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // While streaming, the Send button becomes a Stop button
+                    // that halts generation and keeps the partial reply.
+                    if (isStreaming)
+                      IconButton.filled(
+                        icon: const Icon(Icons.stop),
+                        tooltip: 'Stop generating',
+                        onPressed: () {
+                          ref.read(ttsServiceProvider).stop();
+                          setState(() => _speakingMessageId = null);
+                          ref
+                              .read(chatNotifierProvider(widget.conversationId)
+                                  .notifier)
+                              .stop();
+                        },
+                      )
+                    else
+                      IconButton.filled(
+                        icon: const Icon(Icons.send),
+                        onPressed: isModelLoaded ? _sendMessage : null,
+                      ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                // While streaming, the Send button becomes a Stop button that
-                // halts generation and keeps the partial reply.
-                if (isStreaming)
-                  IconButton.filled(
-                    icon: const Icon(Icons.stop),
-                    tooltip: 'Stop generating',
-                    onPressed: () {
-                      ref.read(ttsServiceProvider).stop();
-                      setState(() => _speakingMessageId = null);
-                      ref
-                          .read(chatNotifierProvider(widget.conversationId)
-                              .notifier)
-                          .stop();
-                    },
-                  )
-                else
-                  IconButton.filled(
-                    icon: const Icon(Icons.send),
-                    onPressed: isModelLoaded ? _sendMessage : null,
-                  ),
               ],
             ),
           ),

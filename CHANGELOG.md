@@ -10,6 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Agent tool: `get_settings` — reports the current RAG chunk size and top-K so the model can explain retrieval behavior to the user ([#12](https://github.com/LucknowAI/loxi_llm/issues/12))
 - Multimodal foundation: `Model`/`Message` domain support for a companion mmproj vision projector and attached images; `InferenceBackend` extended with `imagePaths`/`mmprojPath`/`supportsVision`; llama.cpp's `mtmd` vision toolkit wired into the native `llama_engine` plugin. No UI yet — this lands the plumbing `#21`'s chat UI builds on. ([#19](https://github.com/LucknowAI/loxi_llm/issues/19), [#20](https://github.com/LucknowAI/loxi_llm/issues/20))
+- Multimodal chat UI: attach an image (camera or gallery) to a chat message via a new composer button, gated to vision-capable models; the image is copied into app storage, previewed before sending, and displayed on the sent message. Generation is still text-only — the image isn't fed to the model yet. ([#21](https://github.com/LucknowAI/loxi_llm/issues/21))
 
 ### Fixed
 

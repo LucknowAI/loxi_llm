@@ -1,10 +1,11 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
-/// Provides filesystem paths for model storage.
+/// Provides filesystem paths for model and chat-image storage.
 ///
-/// Models are stored in `<app-documents>/models/`.
-/// This is internal app storage — no Android permissions required.
+/// Models are stored in `<app-documents>/models/`, attached chat images in
+/// `<app-documents>/images/`. Both are internal app storage — no Android
+/// permissions required.
 class FileStorageService {
   Future<String> getModelDirectory() async {
     final appDocDir = await getApplicationDocumentsDirectory();
@@ -15,6 +16,18 @@ class FileStorageService {
 
   Future<String> getModelPath(String filename) async {
     final dir = await getModelDirectory();
+    return '$dir/$filename';
+  }
+
+  Future<String> getImagesDirectory() async {
+    final appDocDir = await getApplicationDocumentsDirectory();
+    final imagesDir = Directory('${appDocDir.path}/images');
+    await imagesDir.create(recursive: true);
+    return imagesDir.path;
+  }
+
+  Future<String> getImagePath(String filename) async {
+    final dir = await getImagesDirectory();
     return '$dir/$filename';
   }
 
