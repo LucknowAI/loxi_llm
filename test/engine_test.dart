@@ -96,6 +96,11 @@ void main() {
       final backend = _StubBackend();
       expect(backend.stop(), completes);
     });
+
+    test('default supportsVision is false', () {
+      final backend = _StubBackend();
+      expect(backend.supportsVision, isFalse);
+    });
   });
 
   group('InferenceBackend.generate stopSequences', () {
@@ -111,6 +116,28 @@ void main() {
       final backend = _CapturingBackend();
       await backend.generate('hi').toList();
       expect(backend.lastStops, isEmpty);
+    });
+  });
+
+  group('InferenceBackend.generate imagePaths', () {
+    test('carries imagePaths through to the implementation', () async {
+      final backend = _CapturingBackend();
+      await backend.generate('prompt', imagePaths: ['/tmp/a.jpg']).toList();
+      expect(backend.lastImagePaths, ['/tmp/a.jpg']);
+    });
+
+    test('defaults imagePaths to empty when omitted', () async {
+      final backend = _CapturingBackend();
+      await backend.generate('prompt').toList();
+      expect(backend.lastImagePaths, isEmpty);
+    });
+  });
+
+  group('InferenceBackend.loadModel mmprojPath', () {
+    test('carries mmprojPath through to the implementation', () async {
+      final backend = _CapturingBackend();
+      await backend.loadModel('/tmp/model.gguf', mmprojPath: '/tmp/mmproj.gguf');
+      expect(backend.lastMmprojPath, '/tmp/mmproj.gguf');
     });
   });
 
@@ -170,11 +197,23 @@ final class _StubBackend extends InferenceBackend {}
 final class _CapturingBackend extends InferenceBackend {
   List<String>? lastStops;
   bool stopCalled = false;
+  List<String>? lastImagePaths;
+  String? lastMmprojPath;
 
   @override
-  Stream<String> generate(String prompt,
-      {List<String> stopSequences = const [], String? grammar}) async* {
+  Future<void> loadModel(String path, {String? mmprojPath}) async {
+    lastMmprojPath = mmprojPath;
+  }
+
+  @override
+  Stream<String> generate(
+    String prompt, {
+    List<String> stopSequences = const [],
+    String? grammar,
+    List<String> imagePaths = const [],
+  }) async* {
     lastStops = stopSequences;
+    lastImagePaths = imagePaths;
   }
 
   @override

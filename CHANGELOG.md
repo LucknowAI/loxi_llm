@@ -9,6 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Agent tool: `get_settings` — reports the current RAG chunk size and top-K so the model can explain retrieval behavior to the user ([#12](https://github.com/LucknowAI/loxi_llm/issues/12))
+- Multimodal foundation: `Model`/`Message` domain support for a companion mmproj vision projector and attached images; `InferenceBackend` extended with `imagePaths`/`mmprojPath`/`supportsVision`; llama.cpp's `mtmd` vision toolkit wired into the native `llama_engine` plugin. No UI yet — this lands the plumbing `#21`'s chat UI builds on. ([#19](https://github.com/LucknowAI/loxi_llm/issues/19), [#20](https://github.com/LucknowAI/loxi_llm/issues/20))
 
 ### Fixed
 
