@@ -441,7 +441,8 @@ class ChatNotifier extends _$ChatNotifier {
           tokenCount: tokens,
           timeToFirstTokenMs: null,
           totalDurationMs: DateTime.now().millisecondsSinceEpoch - startMs,
-          outcome: TraceOutcome.done,
+          outcome:
+              _stopRequested ? TraceOutcome.stopped : TraceOutcome.done,
           agentIteration: iteration,
         ));
       }
@@ -452,6 +453,7 @@ class ChatNotifier extends _$ChatNotifier {
     final loop = AgentLoop(
       generateStream: generateStream,
       registry: registry,
+      isCancelled: () => _stopRequested,
       onToolCall: (toolName) {
         if (state.valueOrNull != null) {
           state = AsyncData(
@@ -482,7 +484,8 @@ class ChatNotifier extends _$ChatNotifier {
           tokenCount: 0,
           timeToFirstTokenMs: null,
           totalDurationMs: 0,
-          outcome: TraceOutcome.done,
+          outcome:
+              _stopRequested ? TraceOutcome.stopped : TraceOutcome.done,
           agentIteration: iteration,
           toolName: toolName,
           toolResult: observation,
@@ -492,6 +495,18 @@ class ChatNotifier extends _$ChatNotifier {
 
     try {
       final result = await loop.run(_historyTurns(history));
+
+      if (result.stopped && result.answer.isEmpty) {
+        if (state.valueOrNull != null) {
+          state = AsyncData(
+            state.requireValue.copyWith(clearStreaming: true),
+          );
+        }
+        log.info(_logTag,
+            'agent stopped: ${result.steps.length} tool step(s), no partial answer');
+        return;
+      }
+
       final assistantMs = DateTime.now().millisecondsSinceEpoch;
       final assistantMsg = Message(
         id: 'msg-$assistantMs',
@@ -511,8 +526,11 @@ class ChatNotifier extends _$ChatNotifier {
         messages: [...state.requireValue.messages, assistantMsg],
         clearStreaming: true,
       ));
-      log.info(_logTag,
-          'agent done: ${result.steps.length} tool step(s), cap=${result.hitIterationCap}');
+      log.info(
+        _logTag,
+        'agent ${result.stopped ? 'stopped' : 'done'}: '
+        '${result.steps.length} tool step(s), cap=${result.hitIterationCap}',
+      );
     } catch (e, st) {
       log.error(_logTag, 'agent loop failed', e, st);
       state = AsyncError(e, st);

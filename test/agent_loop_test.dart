@@ -52,6 +52,7 @@ void main() {
       ).run(initial);
 
       expect(result.hitIterationCap, isFalse);
+      expect(result.stopped, isFalse);
       expect(result.answer, '12 times 7 is 84.');
       expect(result.steps, hasLength(1));
       expect(result.steps.first.observation, '84');
@@ -76,6 +77,7 @@ void main() {
         onAnswerToken: answerTokens.add,
       ).run(initial);
       expect(result.answer, 'The answer is 84.');
+      expect(result.stopped, isFalse);
       expect(answerTokens.join(), 'The answer is 84.');
       expect(result.steps, isEmpty);
       expect(gen.calls, hasLength(1));
@@ -103,6 +105,7 @@ void main() {
       ).run(initial);
 
       expect(result.hitIterationCap, isTrue);
+      expect(result.stopped, isFalse);
       expect(result.steps, hasLength(3));
       expect(gen.calls, hasLength(3));
       expect(result.answer, contains('could not finish'));
@@ -130,6 +133,51 @@ void main() {
       expect(toolName, 'calculator');
       expect(observation, '2');
       expect(iteration, 0);
+    });
+
+    test('stop after generation prevents tool execution and another generation',
+        () async {
+      final gen = _ScriptedGenerate([
+        [
+          '```tool_call\n{"name":"calculator","arguments":{"expression":"12*7"}}\n```',
+        ],
+        ['This generation must never run.'],
+      ]);
+      var toolCalls = 0;
+
+      final result = await AgentLoop(
+        generateStream: gen.call,
+        registry: registry,
+        isCancelled: () => gen.calls.isNotEmpty,
+        onToolCall: (_) => toolCalls++,
+      ).run(initial);
+
+      expect(result.stopped, isTrue);
+      expect(result.hitIterationCap, isFalse);
+      expect(result.answer, isEmpty);
+      expect(result.steps, isEmpty);
+      expect(gen.calls, hasLength(1));
+      expect(toolCalls, 0);
+    });
+
+    test('stop preserves a partial answer already streamed', () async {
+      final gen = _ScriptedGenerate([
+        ['A ', 'partial ', 'answer'],
+      ]);
+      final answerTokens = <String>[];
+
+      final result = await AgentLoop(
+        generateStream: gen.call,
+        registry: registry,
+        isCancelled: () => gen.calls.isNotEmpty,
+        onAnswerToken: answerTokens.add,
+      ).run(initial);
+
+      expect(result.stopped, isTrue);
+      expect(result.answer, 'A partial answer');
+      expect(answerTokens.join(), 'A partial answer');
+      expect(result.steps, isEmpty);
+      expect(gen.calls, hasLength(1));
     });
   });
 }
