@@ -69,4 +69,48 @@ void main() {
     expect(find.byType(Image), findsNothing);
     expect(find.text('just text'), findsOneWidget);
   });
+
+  testWidgets('renders no Text widget for an image-only message (empty content)',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            content: '',
+            imagePath: imageFile.path,
+            isUser: true,
+            isStreaming: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byType(Text), findsNothing);
+  });
+
+  testWidgets('falls back to a broken-image placeholder for a missing file',
+      (tester) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(
+              content: 'gone',
+              imagePath: '/does/not/exist.png',
+              isUser: true,
+              isStreaming: false,
+            ),
+          ),
+        ),
+      );
+      // Image.file's error callback fires via a real async File read —
+      // runAsync lets that real Future actually resolve before we pump.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
+    });
+
+    expect(find.byIcon(Icons.broken_image_outlined), findsOneWidget);
+  });
 }

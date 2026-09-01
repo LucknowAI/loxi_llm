@@ -48,6 +48,19 @@ class ChatState {
   }
 }
 
+/// Whether [ChatNotifier.send] should proceed — either non-empty text or an
+/// attached image is required (image-only sends are allowed).
+bool shouldSendMessage(String text, String? imagePath) =>
+    text.trim().isNotEmpty || imagePath != null;
+
+/// Conversation title derived from a first message's text: 'Image' for an
+/// image-only send (no text), otherwise the text, truncated past 50 chars.
+String firstMessageTitle(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return 'Image';
+  return trimmed.length > 50 ? '${trimmed.substring(0, 47)}...' : trimmed;
+}
+
 @riverpod
 class ChatNotifier extends _$ChatNotifier {
   StreamSubscription<String>? _tokenSub;
@@ -73,7 +86,7 @@ class ChatNotifier extends _$ChatNotifier {
   /// assembly is wired separately.
   Future<void> send(String userText, {String? imagePath}) async {
     final log = AppLogger.instance;
-    if (userText.trim().isEmpty && imagePath == null) return;
+    if (!shouldSendMessage(userText, imagePath)) return;
     _stopRequested = false;
 
     log.info(_logTag,
@@ -104,10 +117,7 @@ class ChatNotifier extends _$ChatNotifier {
     // Update conversation title if this is the first message
     final conversation = convRepo.getById(conversationId);
     if (conversation != null && conversation.title == 'New conversation') {
-      final trimmed = userText.trim();
-      final title = trimmed.isEmpty
-          ? 'Image'
-          : (trimmed.length > 50 ? '${trimmed.substring(0, 47)}...' : trimmed);
+      final title = firstMessageTitle(userText);
       convRepo.save(conversation.copyWith(title: title, updatedAtMs: now));
       ref.invalidate(conversationListNotifierProvider);
     }

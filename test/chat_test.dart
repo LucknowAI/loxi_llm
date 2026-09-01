@@ -5,6 +5,40 @@ import 'package:loki_llm/features/chat/domain/message_role.dart';
 import 'package:loki_llm/features/chat/presentation/chat_notifier.dart';
 
 void main() {
+  group('shouldSendMessage', () {
+    test('true for non-empty text with no image', () {
+      expect(shouldSendMessage('hello', null), isTrue);
+    });
+
+    test('true for an image with empty text (image-only send)', () {
+      expect(shouldSendMessage('', '/tmp/img.jpg'), isTrue);
+      expect(shouldSendMessage('   ', '/tmp/img.jpg'), isTrue);
+    });
+
+    test('false for empty text and no image', () {
+      expect(shouldSendMessage('', null), isFalse);
+      expect(shouldSendMessage('   ', null), isFalse);
+    });
+  });
+
+  group('firstMessageTitle', () {
+    test('falls back to Image for empty (image-only) text', () {
+      expect(firstMessageTitle(''), 'Image');
+      expect(firstMessageTitle('   '), 'Image');
+    });
+
+    test('uses the trimmed text when short', () {
+      expect(firstMessageTitle('  Hello there  '), 'Hello there');
+    });
+
+    test('truncates text past 50 characters with an ellipsis', () {
+      final long = 'x' * 60;
+      final title = firstMessageTitle(long);
+      expect(title, endsWith('...'));
+      expect(title.length, 50);
+    });
+  });
+
   group('MessageRole', () {
     test('user role name is user', () {
       expect(MessageRole.user.name, equals('user'));

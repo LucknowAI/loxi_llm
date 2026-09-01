@@ -67,21 +67,36 @@ class MessageBubble extends StatelessWidget {
                   width: 200,
                   height: 200,
                   fit: BoxFit.cover,
+                  cacheWidth: (200 * MediaQuery.of(context).devicePixelRatio)
+                      .round(),
+                  cacheHeight: (200 * MediaQuery.of(context).devicePixelRatio)
+                      .round(),
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    width: 200,
+                    height: 200,
+                    color: colorScheme.surfaceContainerHighest,
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
             ],
-            child ??
-                Text(
-                  content!,
-                  style: TextStyle(
-                    color: isUser
-                        ? colorScheme.onPrimaryContainer
-                        : colorScheme.onSecondaryContainer,
-                    fontStyle:
-                        isStreaming ? FontStyle.italic : FontStyle.normal,
+            if (child != null || (content?.isNotEmpty ?? false))
+              child ??
+                  Text(
+                    content!,
+                    style: TextStyle(
+                      color: isUser
+                          ? colorScheme.onPrimaryContainer
+                          : colorScheme.onSecondaryContainer,
+                      fontStyle:
+                          isStreaming ? FontStyle.italic : FontStyle.normal,
+                    ),
                   ),
-                ),
             if (showActions) ...[
               const SizedBox(height: 4),
               Row(

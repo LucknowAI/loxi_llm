@@ -31,6 +31,14 @@ class FileStorageService {
     return '$dir/$filename';
   }
 
+  /// Deletes an attached chat image given its full path (as stored on a
+  /// chat message) — unlike [deleteModelFile], callers here always already
+  /// hold the full path, not just a filename. No-op if missing.
+  Future<void> deleteImage(String path) async {
+    final file = File(path);
+    if (await file.exists()) await file.delete();
+  }
+
   Future<bool> modelFileExists(String filename) async {
     final path = await getModelPath(filename);
     return File(path).exists();

@@ -1,9 +1,9 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/providers/download_provider.dart';
 import '../../../core/providers/inference_provider.dart';
@@ -52,6 +52,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     ref.read(ttsServiceProvider).stop();
     _textController.dispose();
     _scrollController.dispose();
+    if (_attachedImagePath != null) {
+      // Fire-and-forget: dispose() can't be async. An unsent attachment
+      // shouldn't outlive the screen it was picked on.
+      ref.read(fileStorageServiceProvider).deleteImage(_attachedImagePath!);
+    }
     super.dispose(); // MUST be last
   }
 
@@ -71,12 +76,15 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final text = _textController.text.trim();
     final imagePath = _attachedImagePath;
     if (text.isEmpty && imagePath == null) return;
-    _textController.clear();
-    setState(() => _attachedImagePath = null);
     try {
       await ref
           .read(chatNotifierProvider(widget.conversationId).notifier)
           .send(text, imagePath: imagePath);
+      // Only clear the composer once send() has actually accepted the
+      // message — a failed send (e.g. generation error) keeps the text and
+      // attachment so the user can retry without redoing either.
+      _textController.clear();
+      if (mounted) setState(() => _attachedImagePath = null);
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
@@ -90,20 +98,32 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     }
   }
 
-  Future<void> _pickImage(ImageSource source) async {
-    final picked = await ImagePicker().pickImage(
-      source: source,
-      imageQuality: 85,
-    );
-    if (picked == null || !mounted) return;
+  Future<void> _pickImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+      final pickedPath = result?.files.single.path;
+      if (pickedPath == null || !mounted) return;
 
-    final storage = ref.read(fileStorageServiceProvider);
-    final filename =
-        'img-${DateTime.now().millisecondsSinceEpoch}${_extensionOf(picked.path)}';
-    final destPath = await storage.getImagePath(filename);
-    await File(picked.path).copy(destPath);
+      final storage = ref.read(fileStorageServiceProvider);
+      final filename =
+          'img-${DateTime.now().millisecondsSinceEpoch}${_extensionOf(pickedPath)}';
+      final destPath = await storage.getImagePath(filename);
+      await File(pickedPath).copy(destPath);
 
-    if (mounted) setState(() => _attachedImagePath = destPath);
+      // Replace any previously attached (unsent) image so it doesn't leak.
+      final previous = _attachedImagePath;
+      if (mounted) setState(() => _attachedImagePath = destPath);
+      if (previous != null) await storage.deleteImage(previous);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not attach image: $e')),
+        );
+      }
+    }
   }
 
   String _extensionOf(String path) {
@@ -111,33 +131,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     return dot == -1 ? '.jpg' : path.substring(dot);
   }
 
-  void _showAttachmentSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('Take photo'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _pickImage(ImageSource.camera);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Choose from gallery'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _pickImage(ImageSource.gallery);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
+  void _removeAttachedImage() {
+    final stale = _attachedImagePath;
+    setState(() => _attachedImagePath = null);
+    if (stale != null) ref.read(fileStorageServiceProvider).deleteImage(stale);
   }
 
   void _editSystemPrompt() {
@@ -264,11 +261,27 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final isToolsEnabled = currentConv?.toolsEnabled ?? false;
     final loadedModel = ref.watch(inferenceNotifierProvider.notifier).loadedModel;
     final agentCapable = isAgentCapableModel(loadedModel?.id);
+    // Catalog-level gate only for now — the model's actual backend.supportsVision
+    // isn't ANDed in yet because loadModel() doesn't pass mmprojPath, so no
+    // backend currently reports true. #24 wires that up alongside real
+    // vision generation.
     final canAttachImage = loadedModel != null && isMultimodalModel(loadedModel);
 
     final isModelLoaded = backendAsync.valueOrNull != null;
     final isStreaming = chatAsync.valueOrNull?.isStreaming ?? false;
     final exportConversation = conversation ?? currentConv;
+
+    // The chat tab is kept alive in an IndexedStack, so switching to a
+    // non-vision model doesn't dispose this screen — drop any pending
+    // attachment rather than let it silently ride along on the next send.
+    if (_attachedImagePath != null && !canAttachImage) {
+      final stale = _attachedImagePath;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _attachedImagePath = null);
+        ref.read(fileStorageServiceProvider).deleteImage(stale!);
+      });
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -500,6 +513,22 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                             width: 64,
                             height: 64,
                             fit: BoxFit.cover,
+                            cacheWidth:
+                                (64 * MediaQuery.of(context).devicePixelRatio)
+                                    .round(),
+                            cacheHeight:
+                                (64 * MediaQuery.of(context).devicePixelRatio)
+                                    .round(),
+                            errorBuilder: (context, error, stackTrace) =>
+                                Container(
+                              width: 64,
+                              height: 64,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.broken_image_outlined),
+                            ),
                           ),
                         ),
                         Positioned(
@@ -511,8 +540,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                             visualDensity: VisualDensity.compact,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
-                            onPressed: () =>
-                                setState(() => _attachedImagePath = null),
+                            onPressed: _removeAttachedImage,
                           ),
                         ),
                       ],
@@ -526,7 +554,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                           ? 'Attach image'
                           : 'Attaching images requires a vision-capable '
                               'model (e.g. Gemma 4)',
-                      onPressed: canAttachImage ? _showAttachmentSheet : null,
+                      onPressed: canAttachImage ? _pickImage : null,
                     ),
                     Expanded(
                       child: TextField(

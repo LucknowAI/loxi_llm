@@ -64,9 +64,6 @@ dependencies:
   path_provider: ^2.1.5
   system_info_plus: ^0.0.6
 
-  # Multimodal chat: image attachment (camera / gallery)
-  image_picker: ^1.1.2
-
   # Embedding inference
   onnxruntime: ^1.4.1
   dart_wordpiece: ^1.1.0

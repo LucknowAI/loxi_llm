@@ -1,9 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Required for dio HTTP downloads (release builds) -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- Required to capture a photo for multimodal chat attachments -->
-    <uses-permission android:name="android.permission.CAMERA"/>
-    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
         android:label="Loki LLM"
         android:name="${applicationName}"
