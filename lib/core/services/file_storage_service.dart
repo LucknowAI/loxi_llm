@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 /// Provides filesystem paths for model and chat-image storage.
@@ -33,8 +34,12 @@ class FileStorageService {
 
   /// Deletes an attached chat image given its full path (as stored on a
   /// chat message) — unlike [deleteModelFile], callers here always already
-  /// hold the full path, not just a filename. No-op if missing.
+  /// hold the full path, not just a filename. No-op if missing, and no-op
+  /// (rather than throw) if [path] isn't actually inside our own images
+  /// directory — a safety guard against ever deleting an arbitrary file.
   Future<void> deleteImage(String path) async {
+    final imagesDir = await getImagesDirectory();
+    if (p.dirname(path) != imagesDir) return;
     final file = File(path);
     if (await file.exists()) await file.delete();
   }

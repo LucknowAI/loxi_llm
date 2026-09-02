@@ -76,18 +76,24 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final text = _textController.text.trim();
     final imagePath = _attachedImagePath;
     if (text.isEmpty && imagePath == null) return;
+    // Hand off ownership of the attachment to send() immediately: once
+    // send() persists the message, the message (not the composer) owns the
+    // file, so dispose()/the vision-gate below must no longer touch it —
+    // otherwise a slow send() (RAG retrieval, summarization) leaves a window
+    // where navigating away or switching models deletes a file the
+    // already-persisted message still points to. Only restore it here if
+    // send() throws, which today only happens before persisting (no model
+    // loaded).
+    setState(() => _attachedImagePath = null);
     try {
       await ref
           .read(chatNotifierProvider(widget.conversationId).notifier)
           .send(text, imagePath: imagePath);
-      // Only clear the composer once send() has actually accepted the
-      // message — a failed send (e.g. generation error) keeps the text and
-      // attachment so the user can retry without redoing either.
       _textController.clear();
-      if (mounted) setState(() => _attachedImagePath = null);
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
+        setState(() => _attachedImagePath = imagePath);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error: $e'),
@@ -104,14 +110,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         type: FileType.image,
         allowMultiple: false,
       );
-      final pickedPath = result?.files.single.path;
-      if (pickedPath == null || !mounted) return;
+      final picked = result?.files.single;
+      if (picked?.path == null || !mounted) return;
 
       final storage = ref.read(fileStorageServiceProvider);
       final filename =
-          'img-${DateTime.now().millisecondsSinceEpoch}${_extensionOf(pickedPath)}';
+          'img-${DateTime.now().millisecondsSinceEpoch}${_extensionOf(picked!)}';
       final destPath = await storage.getImagePath(filename);
-      await File(pickedPath).copy(destPath);
+      await File(picked.path!).copy(destPath);
 
       // Replace any previously attached (unsent) image so it doesn't leak.
       final previous = _attachedImagePath;
@@ -126,9 +132,15 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     }
   }
 
-  String _extensionOf(String path) {
-    final dot = path.lastIndexOf('.');
-    return dot == -1 ? '.jpg' : path.substring(dot);
+  /// [PlatformFile.extension] splits the picked *filename*, not the full
+  /// path — unlike splitting the path directly, it isn't fooled by dots
+  /// earlier in an Android cache path (e.g. a package name). Falls back to
+  /// `.jpg` when the filename itself has no extension (e.g. some picker
+  /// implementations return an extensionless scaled-cache filename).
+  String _extensionOf(PlatformFile file) {
+    final ext = file.extension;
+    if (ext == null || ext == file.name) return '.jpg';
+    return '.$ext';
   }
 
   void _removeAttachedImage() {
@@ -274,14 +286,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     // The chat tab is kept alive in an IndexedStack, so switching to a
     // non-vision model doesn't dispose this screen — drop any pending
     // attachment rather than let it silently ride along on the next send.
-    if (_attachedImagePath != null && !canAttachImage) {
-      final stale = _attachedImagePath;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        setState(() => _attachedImagePath = null);
-        ref.read(fileStorageServiceProvider).deleteImage(stale!);
-      });
-    }
+    // Only a path the composer still owns is deleted here: once send() has
+    // handed a path off (see _sendMessage), _attachedImagePath is already
+    // null, so an in-flight send's already-persisted image is untouched.
+    ref.listen(inferenceNotifierProvider, (previous, next) {
+      final model = ref.read(inferenceNotifierProvider.notifier).loadedModel;
+      final stillAllowed = model != null && isMultimodalModel(model);
+      if (stillAllowed || _attachedImagePath == null) return;
+      final stale = _attachedImagePath!;
+      setState(() => _attachedImagePath = null);
+      ref.read(fileStorageServiceProvider).deleteImage(stale);
+    });
 
     return Scaffold(
       appBar: AppBar(
