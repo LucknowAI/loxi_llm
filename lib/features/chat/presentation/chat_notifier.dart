@@ -48,6 +48,19 @@ class ChatState {
   }
 }
 
+/// Whether [ChatNotifier.send] should proceed — either non-empty text or an
+/// attached image is required (image-only sends are allowed).
+bool shouldSendMessage(String text, String? imagePath) =>
+    text.trim().isNotEmpty || imagePath != null;
+
+/// Conversation title derived from a first message's text: 'Image' for an
+/// image-only send (no text), otherwise the text, truncated past 50 chars.
+String firstMessageTitle(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return 'Image';
+  return trimmed.length > 50 ? '${trimmed.substring(0, 47)}...' : trimmed;
+}
+
 @riverpod
 class ChatNotifier extends _$ChatNotifier {
   StreamSubscription<String>? _tokenSub;
@@ -67,9 +80,13 @@ class ChatNotifier extends _$ChatNotifier {
   static const _logTag = 'ChatNotifier';
 
   /// Send a user message and stream the assistant response.
-  Future<void> send(String userText) async {
+  ///
+  /// [imagePath], when set, is attached to and persisted with the user
+  /// message. It does not yet influence generation — vision-aware prompt
+  /// assembly is wired separately.
+  Future<void> send(String userText, {String? imagePath}) async {
     final log = AppLogger.instance;
-    if (userText.trim().isEmpty) return;
+    if (!shouldSendMessage(userText, imagePath)) return;
     _stopRequested = false;
 
     log.info(_logTag,
@@ -93,15 +110,14 @@ class ChatNotifier extends _$ChatNotifier {
       role: MessageRole.user,
       content: userText.trim(),
       createdAtMs: now,
+      imagePath: imagePath,
     );
     msgRepo.save(userMsg);
 
     // Update conversation title if this is the first message
     final conversation = convRepo.getById(conversationId);
     if (conversation != null && conversation.title == 'New conversation') {
-      final title = userText.trim().length > 50
-          ? '${userText.trim().substring(0, 47)}...'
-          : userText.trim();
+      final title = firstMessageTitle(userText);
       convRepo.save(conversation.copyWith(title: title, updatedAtMs: now));
       ref.invalidate(conversationListNotifierProvider);
     }

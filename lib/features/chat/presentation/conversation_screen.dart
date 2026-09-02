@@ -1,10 +1,15 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../../core/providers/download_provider.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../../../core/providers/tts_provider.dart';
 import '../../agent/agent_model_support.dart';
+import '../../models/domain/model.dart';
 import '../application/conversation_markdown_exporter.dart';
 import '../data/conversation_repository.dart';
 import '../domain/conversation.dart';
@@ -31,6 +36,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   /// Message id currently being read aloud, if any.
   String? _speakingMessageId;
 
+  /// Path to an image attached to the message being composed, if any. Copied
+  /// into app storage so it survives independently of the picker's temp file.
+  String? _attachedImagePath;
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +52,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     ref.read(ttsServiceProvider).stop();
     _textController.dispose();
     _scrollController.dispose();
+    if (_attachedImagePath != null) {
+      // Fire-and-forget: dispose() can't be async. An unsent attachment
+      // shouldn't outlive the screen it was picked on.
+      ref.read(fileStorageServiceProvider).deleteImage(_attachedImagePath!);
+    }
     super.dispose(); // MUST be last
   }
 
@@ -60,15 +74,26 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
-    if (text.isEmpty) return;
-    _textController.clear();
+    final imagePath = _attachedImagePath;
+    if (text.isEmpty && imagePath == null) return;
+    // Hand off ownership of the attachment to send() immediately: once
+    // send() persists the message, the message (not the composer) owns the
+    // file, so dispose()/the vision-gate below must no longer touch it —
+    // otherwise a slow send() (RAG retrieval, summarization) leaves a window
+    // where navigating away or switching models deletes a file the
+    // already-persisted message still points to. Only restore it here if
+    // send() throws, which today only happens before persisting (no model
+    // loaded).
+    setState(() => _attachedImagePath = null);
     try {
       await ref
           .read(chatNotifierProvider(widget.conversationId).notifier)
-          .send(text);
+          .send(text, imagePath: imagePath);
+      _textController.clear();
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
+        setState(() => _attachedImagePath = imagePath);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error: $e'),
@@ -77,6 +102,51 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         );
       }
     }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+      final picked = result?.files.single;
+      if (picked?.path == null || !mounted) return;
+
+      final storage = ref.read(fileStorageServiceProvider);
+      final filename =
+          'img-${DateTime.now().millisecondsSinceEpoch}${_extensionOf(picked!)}';
+      final destPath = await storage.getImagePath(filename);
+      await File(picked.path!).copy(destPath);
+
+      // Replace any previously attached (unsent) image so it doesn't leak.
+      final previous = _attachedImagePath;
+      if (mounted) setState(() => _attachedImagePath = destPath);
+      if (previous != null) await storage.deleteImage(previous);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not attach image: $e')),
+        );
+      }
+    }
+  }
+
+  /// [PlatformFile.extension] splits the picked *filename*, not the full
+  /// path — unlike splitting the path directly, it isn't fooled by dots
+  /// earlier in an Android cache path (e.g. a package name). Falls back to
+  /// `.jpg` when the filename itself has no extension (e.g. some picker
+  /// implementations return an extensionless scaled-cache filename).
+  String _extensionOf(PlatformFile file) {
+    final ext = file.extension;
+    if (ext == null || ext == file.name) return '.jpg';
+    return '.$ext';
+  }
+
+  void _removeAttachedImage() {
+    final stale = _attachedImagePath;
+    setState(() => _attachedImagePath = null);
+    if (stale != null) ref.read(fileStorageServiceProvider).deleteImage(stale);
   }
 
   void _editSystemPrompt() {
@@ -203,10 +273,30 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final isToolsEnabled = currentConv?.toolsEnabled ?? false;
     final loadedModel = ref.watch(inferenceNotifierProvider.notifier).loadedModel;
     final agentCapable = isAgentCapableModel(loadedModel?.id);
+    // Catalog-level gate only for now — the model's actual backend.supportsVision
+    // isn't ANDed in yet because loadModel() doesn't pass mmprojPath, so no
+    // backend currently reports true. #24 wires that up alongside real
+    // vision generation.
+    final canAttachImage = loadedModel != null && isMultimodalModel(loadedModel);
 
     final isModelLoaded = backendAsync.valueOrNull != null;
     final isStreaming = chatAsync.valueOrNull?.isStreaming ?? false;
     final exportConversation = conversation ?? currentConv;
+
+    // The chat tab is kept alive in an IndexedStack, so switching to a
+    // non-vision model doesn't dispose this screen — drop any pending
+    // attachment rather than let it silently ride along on the next send.
+    // Only a path the composer still owns is deleted here: once send() has
+    // handed a path off (see _sendMessage), _attachedImagePath is already
+    // null, so an in-flight send's already-persisted image is untouched.
+    ref.listen(inferenceNotifierProvider, (previous, next) {
+      final model = ref.read(inferenceNotifierProvider.notifier).loadedModel;
+      final stillAllowed = model != null && isMultimodalModel(model);
+      if (stillAllowed || _attachedImagePath == null) return;
+      final stale = _attachedImagePath!;
+      setState(() => _attachedImagePath = null);
+      ref.read(fileStorageServiceProvider).deleteImage(stale);
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -366,6 +456,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                     final msg = messages[index];
                     return MessageBubble(
                       content: msg.content,
+                      imagePath: msg.imagePath,
                       isUser: msg.role == MessageRole.user,
                       isStreaming: false,
                       onCopy: () => _copyText(
@@ -420,43 +511,103 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 top: BorderSide(color: Theme.of(context).dividerColor),
               ),
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    decoration: const InputDecoration(
-                      hintText: 'Type a message...',
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                if (_attachedImagePath != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            File(_attachedImagePath!),
+                            width: 64,
+                            height: 64,
+                            fit: BoxFit.cover,
+                            cacheWidth:
+                                (64 * MediaQuery.of(context).devicePixelRatio)
+                                    .round(),
+                            cacheHeight:
+                                (64 * MediaQuery.of(context).devicePixelRatio)
+                                    .round(),
+                            errorBuilder: (context, error, stackTrace) =>
+                                Container(
+                              width: 64,
+                              height: 64,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.broken_image_outlined),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: -8,
+                          right: -8,
+                          child: IconButton(
+                            icon: const Icon(Icons.cancel, size: 20),
+                            tooltip: 'Remove image',
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: _removeAttachedImage,
+                          ),
+                        ),
+                      ],
                     ),
-                    minLines: 1,
-                    maxLines: 4,
-                    onSubmitted: (_) => _sendMessage(),
                   ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.image_outlined),
+                      tooltip: canAttachImage
+                          ? 'Attach image'
+                          : 'Attaching images requires a vision-capable '
+                              'model (e.g. Gemma 4)',
+                      onPressed: canAttachImage ? _pickImage : null,
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: _textController,
+                        decoration: const InputDecoration(
+                          hintText: 'Type a message...',
+                          border: OutlineInputBorder(),
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        minLines: 1,
+                        maxLines: 4,
+                        onSubmitted: (_) => _sendMessage(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // While streaming, the Send button becomes a Stop button
+                    // that halts generation and keeps the partial reply.
+                    if (isStreaming)
+                      IconButton.filled(
+                        icon: const Icon(Icons.stop),
+                        tooltip: 'Stop generating',
+                        onPressed: () {
+                          ref.read(ttsServiceProvider).stop();
+                          setState(() => _speakingMessageId = null);
+                          ref
+                              .read(chatNotifierProvider(widget.conversationId)
+                                  .notifier)
+                              .stop();
+                        },
+                      )
+                    else
+                      IconButton.filled(
+                        icon: const Icon(Icons.send),
+                        onPressed: isModelLoaded ? _sendMessage : null,
+                      ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                // While streaming, the Send button becomes a Stop button that
-                // halts generation and keeps the partial reply.
-                if (isStreaming)
-                  IconButton.filled(
-                    icon: const Icon(Icons.stop),
-                    tooltip: 'Stop generating',
-                    onPressed: () {
-                      ref.read(ttsServiceProvider).stop();
-                      setState(() => _speakingMessageId = null);
-                      ref
-                          .read(chatNotifierProvider(widget.conversationId)
-                              .notifier)
-                          .stop();
-                    },
-                  )
-                else
-                  IconButton.filled(
-                    icon: const Icon(Icons.send),
-                    onPressed: isModelLoaded ? _sendMessage : null,
-                  ),
               ],
             ),
           ),

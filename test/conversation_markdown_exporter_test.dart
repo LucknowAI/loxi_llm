@@ -76,5 +76,34 @@ void main() {
 
       expect(md, isNot(contains('hidden')));
     });
+
+    test('notes an attachment for messages with an imagePath', () {
+      final md = exportConversationMarkdown(
+        conversation: conversation.copyWith(systemPrompt: ''),
+        messages: const [
+          Message(
+            id: 'm1',
+            conversationId: 'conv-1',
+            role: MessageRole.user,
+            content: 'what is this?',
+            createdAtMs: 1700000200000,
+            imagePath: '/tmp/img-1.jpg',
+          ),
+        ],
+        exportedAt: DateTime.utc(2026, 8, 1, 12, 0),
+      );
+
+      expect(md, contains('_[image attached]_'));
+    });
+
+    test('omits the attachment note when imagePath is null', () {
+      final md = exportConversationMarkdown(
+        conversation: conversation.copyWith(systemPrompt: ''),
+        messages: messages,
+        exportedAt: DateTime.utc(2026, 8, 1, 12, 0),
+      );
+
+      expect(md, isNot(contains('[image attached]')));
+    });
   });
 }
