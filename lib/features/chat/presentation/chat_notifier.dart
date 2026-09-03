@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/engine/chat_template.dart';
 import '../../../core/logging/app_logger.dart';
@@ -133,6 +134,18 @@ class ChatNotifier extends _$ChatNotifier {
       throw StateError('No model loaded');
     }
     log.debug(_logTag, 'backend=${backend.runtimeType} isLoaded=${backend.isLoaded}');
+
+    // Same "don't send" contract as the no-model-loaded guard above: verify
+    // before anything is persisted, not after. An image can vanish between
+    // attach and send (deleted, storage revoked); a missing/corrupt file
+    // reaching mtmd_helper_bitmap_init_from_file surfaces as a cryptic
+    // native failure instead of a clean, actionable error.
+    if (imagePath != null &&
+        backend.supportsVision &&
+        !await File(imagePath).exists()) {
+      log.warn(_logTag, 'send() aborted — attached image no longer exists: $imagePath');
+      throw StateError('Attached image is no longer available. Please re-attach.');
+    }
 
     final convRepo = ref.read(conversationRepositoryProvider);
     final msgRepo = ref.read(messageRepositoryProvider);

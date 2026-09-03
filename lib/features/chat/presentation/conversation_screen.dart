@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../../core/engine/inference_backend.dart';
 import '../../../core/providers/download_provider.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../../../core/providers/tts_provider.dart';
@@ -18,6 +19,23 @@ import '../domain/message_role.dart';
 import 'chat_notifier.dart';
 import 'conversation_list_notifier.dart';
 import 'widgets/message_bubble.dart';
+
+/// Whether a pending image attachment should survive an inference-state
+/// change. True while a load is in flight ([next] is [AsyncLoading]) — only
+/// a settled `AsyncData`/`AsyncError` should ever decide to drop an
+/// attachment, otherwise reloading (or switching between) vision-capable
+/// models would wipe it on every transient loading tick. Once settled, true
+/// only when [loadedModel] is both catalog-multimodal and the new backend
+/// itself reports vision support.
+bool stillAllowsAttachment(
+  AsyncValue<InferenceBackend?> next,
+  Model? loadedModel,
+) {
+  if (next is AsyncLoading) return true;
+  return loadedModel != null &&
+      isMultimodalModel(loadedModel) &&
+      (next.valueOrNull?.supportsVision ?? false);
+}
 
 class ConversationScreen extends ConsumerStatefulWidget {
   const ConversationScreen({super.key, required this.conversationId});
@@ -293,10 +311,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     // null, so an in-flight send's already-persisted image is untouched.
     ref.listen(inferenceNotifierProvider, (previous, next) {
       final model = ref.read(inferenceNotifierProvider.notifier).loadedModel;
-      final stillAllowed = model != null &&
-          isMultimodalModel(model) &&
-          (next.valueOrNull?.supportsVision ?? false);
-      if (stillAllowed || _attachedImagePath == null) return;
+      if (stillAllowsAttachment(next, model) || _attachedImagePath == null) {
+        return;
+      }
       final stale = _attachedImagePath!;
       setState(() => _attachedImagePath = null);
       ref.read(fileStorageServiceProvider).deleteImage(stale);
