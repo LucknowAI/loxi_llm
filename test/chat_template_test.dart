@@ -159,6 +159,12 @@ Assistant: ''');
       expect(
           ChatTemplate.forModelId('gemma-4-9b-it').kind, ChatTemplateKind.gemma);
     });
+    test('gemma4-e2b-it and gemma4-e4b-it catalog ids route to gemma', () {
+      expect(ChatTemplate.forModelId('gemma4-e2b-it').kind,
+          ChatTemplateKind.gemma);
+      expect(ChatTemplate.forModelId('gemma4-e4b-it').kind,
+          ChatTemplateKind.gemma);
+    });
     test('unknown id falls back to generic', () {
       expect(ChatTemplate.forModelId('mystery-model').kind,
           ChatTemplateKind.generic);

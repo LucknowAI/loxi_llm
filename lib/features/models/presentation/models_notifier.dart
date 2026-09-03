@@ -22,6 +22,19 @@ bool isSupportedSideloadExtension(String filename) {
   return ext == 'gguf';
 }
 
+/// Catalog entries not yet present (by id) among [existing] rows.
+///
+/// Pure and side-effect free so seed-merge logic is unit-testable without
+/// ObjectBox. Rows a user has already touched are never returned here, so
+/// callers can safely upsert the result without clobbering user state.
+List<Model> modelsMissingFromCatalog({
+  required List<Model> existing,
+  required List<Model> catalog,
+}) {
+  final existingIds = existing.map((m) => m.id).toSet();
+  return catalog.where((m) => !existingIds.contains(m.id)).toList();
+}
+
 @riverpod
 class ModelsNotifier extends _$ModelsNotifier {
   /// Transient live download speed in bytes/second, keyed by model id. Not
@@ -32,9 +45,12 @@ class ModelsNotifier extends _$ModelsNotifier {
   Future<List<Model>> build() async {
     final repo = ref.watch(modelRepositoryProvider);
     var models = repo.getAll();
-    if (models.isEmpty) {
-      // Seed curated models on first launch
-      for (final model in kCuratedModels) {
+    final missing = modelsMissingFromCatalog(existing: models, catalog: kCuratedModels);
+    if (missing.isNotEmpty) {
+      // Seed any catalog entries the DB doesn't have yet — covers both a
+      // fresh install (all entries missing) and an existing install after a
+      // new model was added to the catalog (only the new ones missing).
+      for (final model in missing) {
         repo.save(model);
       }
       models = repo.getAll();
@@ -72,11 +88,13 @@ class ModelsNotifier extends _$ModelsNotifier {
 
     final service = ref.read(downloadServiceProvider);
     final url = huggingFaceDownloadUrl(model);
+    final mmprojUrl = huggingFaceMmprojDownloadUrl(model);
 
     try {
-      final savePath = await service.downloadModel(
+      final result = await service.downloadModel(
         model: model,
         downloadUrl: url,
+        mmprojDownloadUrl: mmprojUrl,
         onProgress: (progress, bytesPerSecond) {
           final current = repo.getById(modelId);
           if (current != null) {
@@ -86,12 +104,13 @@ class ModelsNotifier extends _$ModelsNotifier {
           }
         },
       );
-      // Mark as downloaded with local path
+      // Mark as downloaded with local path(s)
       final downloaded = repo.getById(modelId);
       if (downloaded != null) {
         repo.save(downloaded.copyWith(
           status: ModelStatus.downloaded,
-          localPath: savePath,
+          localPath: result.modelPath,
+          mmprojLocalPath: result.mmprojPath,
           downloadProgress: 1.0,
         ));
       }

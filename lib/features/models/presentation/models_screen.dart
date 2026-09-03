@@ -203,7 +203,7 @@ class _ModelListTile extends ConsumerWidget {
           onPressed: () async {
             final confirmed = await RamCheckService.confirmLoad(
               context,
-              modelSizeBytes: model.sizeBytes,
+              modelSizeBytes: model.sizeBytes + (model.mmprojSizeBytes ?? 0),
             );
             if (confirmed && context.mounted) {
               ref.read(modelsNotifierProvider.notifier).loadModel(model.id);
