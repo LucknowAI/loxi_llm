@@ -40,6 +40,13 @@ base class InferenceBackend {
   /// unimplemented stub, since most backends/models are text-only.
   bool get supportsVision => false;
 
+  /// The literal marker string a prompt must contain (once, per attached
+  /// image) before an image can be included in [generate]'s [imagePaths].
+  /// Only ever called after [supportsVision] is confirmed `true`, so the
+  /// unimplemented-by-default throw is unreachable in practice.
+  Future<String> mediaMarker() =>
+      throw UnimplementedError('mediaMarker not implemented');
+
   /// Generation parameters this backend applies (temperature, maxTokens, ...).
   /// Reported for diagnostics/model-I/O logging; defaults to empty.
   Map<String, Object?> get generationParams => const {};

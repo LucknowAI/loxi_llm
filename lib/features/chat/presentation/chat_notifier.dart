@@ -61,6 +61,40 @@ String firstMessageTitle(String text) {
   return trimmed.length > 50 ? '${trimmed.substring(0, 47)}...' : trimmed;
 }
 
+/// Maps already-windowed history messages to template turns.
+///
+/// When [imageMarker] is non-null, it's prepended once to the *last* turn's
+/// content — and only if that turn's own message has an attached image.
+/// Never an earlier turn, even one with its own image: [generate]'s
+/// `imagePaths` only ever re-supplies the current turn's image on each call,
+/// so a marker anywhere else would reference a bitmap that was never given.
+List<ChatTurn> historyTurnsForPrompt(
+  List<Message> windowedHistory, {
+  String? imageMarker,
+}) {
+  return [
+    for (var i = 0; i < windowedHistory.length; i++)
+      ChatTurn(
+        windowedHistory[i].role,
+        (imageMarker != null &&
+                i == windowedHistory.length - 1 &&
+                windowedHistory[i].imagePath != null)
+            ? '$imageMarker\n${windowedHistory[i].content}'
+            : windowedHistory[i].content,
+      ),
+  ];
+}
+
+/// The image paths to pass to [InferenceBackend.generate] for this turn:
+/// the single attached image, but only when the backend actually supports
+/// vision — never sent otherwise, even if one is attached (e.g. a stale
+/// attachment surviving a model switch away from a vision-capable model).
+List<String> imagePathsForGeneration({
+  required String? imagePath,
+  required bool supportsVision,
+}) =>
+    (imagePath != null && supportsVision) ? [imagePath] : const [];
+
 @riverpod
 class ChatNotifier extends _$ChatNotifier {
   StreamSubscription<String>? _tokenSub;
@@ -82,8 +116,9 @@ class ChatNotifier extends _$ChatNotifier {
   /// Send a user message and stream the assistant response.
   ///
   /// [imagePath], when set, is attached to and persisted with the user
-  /// message. It does not yet influence generation — vision-aware prompt
-  /// assembly is wired separately.
+  /// message. It also grounds generation when the loaded backend reports
+  /// [InferenceBackend.supportsVision] — otherwise it's persisted/displayed
+  /// only, same as before.
   Future<void> send(String userText, {String? imagePath}) async {
     final log = AppLogger.instance;
     if (!shouldSendMessage(userText, imagePath)) return;
@@ -149,6 +184,26 @@ class ChatNotifier extends _$ChatNotifier {
       template: template,
     );
 
+    // Vision wiring for this turn only — computed once, reused by whichever
+    // path fires below (and, for the agent path, by every one of its
+    // iterations). `backend.supportsVision` is the native-verified layer:
+    // an attached image is only ever honored when the loaded mmproj actually
+    // reported vision support after load, not just because the catalog says
+    // the model is multimodal.
+    final wantsVision = imagePath != null && backend.supportsVision;
+    final imageMarker = wantsVision ? await backend.mediaMarker() : null;
+    final generationImagePaths = imagePathsForGeneration(
+      imagePath: imagePath,
+      supportsVision: backend.supportsVision,
+    );
+    // A vision-tower forward pass over an image (mtmd_helper_eval_chunks)
+    // runs CPU-only and can take minutes on-device before the first token —
+    // observed ~186s for one image on a mid-range phone — versus a few
+    // seconds for text-only prefill. Give it real headroom rather than
+    // timing out mid-encode.
+    final generationTimeout =
+        wantsVision ? const Duration(seconds: 300) : const Duration(seconds: 60);
+
     // Tool-calling agent path (per-conversation toggle). When enabled and the
     // loaded model supports tools, the model decides which tools to call; the
     // auto-RAG/streaming path below is skipped. Plain chat is unchanged.
@@ -166,6 +221,8 @@ class ChatNotifier extends _$ChatNotifier {
           summary,
           ragEnabled: ragEnabled,
           ragChunks: ragChunks,
+          imageMarker: imageMarker,
+          imagePaths: generationImagePaths,
         );
         return;
       }
@@ -186,7 +243,7 @@ class ChatNotifier extends _$ChatNotifier {
     // RAG chunks fold into the last user turn (see ChatTemplate.format).
     final prompt = buildPrompt(
       template: template,
-      turns: _historyTurns(allMessages),
+      turns: _historyTurns(allMessages, imageMarker: imageMarker),
       systemPrompt: conversation?.systemPrompt ?? '',
       summary: summary,
       ragContext: _buildRagContext(ragChunks),
@@ -237,8 +294,12 @@ class ChatNotifier extends _$ChatNotifier {
     await log.flush();
 
     _tokenSub = backend
-        .generate(prompt, stopSequences: template.stopSequences)
-        .timeout(const Duration(seconds: 60))
+        .generate(
+          prompt,
+          stopSequences: template.stopSequences,
+          imagePaths: generationImagePaths,
+        )
+        .timeout(generationTimeout)
         .listen(
       (token) {
         if (tokenCount == 0) {
@@ -284,6 +345,10 @@ class ChatNotifier extends _$ChatNotifier {
           e is TimeoutException ? TraceOutcome.timeout : TraceOutcome.error,
           error: e.toString(),
         );
+        // A client-side timeout only stops the Dart listener — the native
+        // generation may still be running. Tell it to stop so it doesn't
+        // keep burning CPU/battery, and so the next turn starts clean.
+        if (e is TimeoutException) backend.stop();
         state = AsyncError(e, st);
       },
       cancelOnError: true,
@@ -372,6 +437,8 @@ class ChatNotifier extends _$ChatNotifier {
     String summary, {
     required bool ragEnabled,
     required List<DocumentChunk> ragChunks,
+    String? imageMarker,
+    List<String> imagePaths = const [],
   }) async {
     final log = AppLogger.instance;
     final backend = ref.read(inferenceNotifierProvider).valueOrNull;
@@ -432,13 +499,20 @@ class ChatNotifier extends _$ChatNotifier {
       final startMs = DateTime.now().millisecondsSinceEpoch;
       final buffer = StringBuffer();
       var tokens = 0;
+      // Every agent iteration that carries an image re-runs vision encoding
+      // (no KV-cache reuse across generate() calls — see the plain path's
+      // generationTimeout comment), so it needs the same generous headroom.
+      final iterationTimeout = imagePaths.isNotEmpty
+          ? const Duration(seconds: 300)
+          : const Duration(seconds: 120);
       await for (final token in backend
           .generate(
             prompt,
             stopSequences: template.stopSequences,
             grammar: grammar,
+            imagePaths: imagePaths,
           )
-          .timeout(const Duration(seconds: 120))) {
+          .timeout(iterationTimeout)) {
         buffer.write(token);
         tokens++;
         yield token;
@@ -510,7 +584,8 @@ class ChatNotifier extends _$ChatNotifier {
     );
 
     try {
-      final result = await loop.run(_historyTurns(history));
+      final result =
+          await loop.run(_historyTurns(history, imageMarker: imageMarker));
 
       if (result.stopped && result.answer.isEmpty) {
         if (state.valueOrNull != null) {
@@ -549,6 +624,9 @@ class ChatNotifier extends _$ChatNotifier {
       );
     } catch (e, st) {
       log.error(_logTag, 'agent loop failed', e, st);
+      // See the plain path's onError: a client-side timeout doesn't stop
+      // native generation on its own.
+      if (e is TimeoutException) backend.stop();
       state = AsyncError(e, st);
     }
   }
@@ -583,11 +661,11 @@ class ChatNotifier extends _$ChatNotifier {
 
   /// Map the most recent [history] messages to template turns, dropping older
   /// turns so a long conversation never overflows the context window.
-  List<ChatTurn> _historyTurns(List<Message> history) {
+  List<ChatTurn> _historyTurns(List<Message> history, {String? imageMarker}) {
     final windowed = history.length > _maxHistoryMessages
         ? history.sublist(history.length - _maxHistoryMessages)
         : history;
-    return [for (final m in windowed) ChatTurn(m.role, m.content)];
+    return historyTurnsForPrompt(windowed, imageMarker: imageMarker);
   }
 
   /// Assemble retrieved RAG chunks into a labeled context block, or '' when

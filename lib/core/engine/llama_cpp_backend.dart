@@ -19,6 +19,9 @@ final class LlamaCppBackend extends InferenceBackend {
   bool get supportsVision => _supportsVision;
 
   @override
+  Future<String> mediaMarker() => _llama.mediaMarker();
+
+  @override
   Future<void> loadModel(String path, {String? mmprojPath}) async {
     final success = await _llama.loadModel(
       LlamaConfig(

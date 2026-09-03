@@ -273,11 +273,13 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final isToolsEnabled = currentConv?.toolsEnabled ?? false;
     final loadedModel = ref.watch(inferenceNotifierProvider.notifier).loadedModel;
     final agentCapable = isAgentCapableModel(loadedModel?.id);
-    // Catalog-level gate only for now — the model's actual backend.supportsVision
-    // isn't ANDed in yet because loadModel() doesn't pass mmprojPath, so no
-    // backend currently reports true. #24 wires that up alongside real
-    // vision generation.
-    final canAttachImage = loadedModel != null && isMultimodalModel(loadedModel);
+    // Catalog data (isMultimodalModel) only says the model *should* support
+    // vision; backend.supportsVision is the native-verified layer (the mmproj
+    // actually loaded and reported vision support) — both must hold before
+    // the attach button appears.
+    final canAttachImage = loadedModel != null &&
+        isMultimodalModel(loadedModel) &&
+        (backendAsync.valueOrNull?.supportsVision ?? false);
 
     final isModelLoaded = backendAsync.valueOrNull != null;
     final isStreaming = chatAsync.valueOrNull?.isStreaming ?? false;
@@ -291,7 +293,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     // null, so an in-flight send's already-persisted image is untouched.
     ref.listen(inferenceNotifierProvider, (previous, next) {
       final model = ref.read(inferenceNotifierProvider.notifier).loadedModel;
-      final stillAllowed = model != null && isMultimodalModel(model);
+      final stillAllowed = model != null &&
+          isMultimodalModel(model) &&
+          (next.valueOrNull?.supportsVision ?? false);
       if (stillAllowed || _attachedImagePath == null) return;
       final stale = _attachedImagePath!;
       setState(() => _attachedImagePath = null);
