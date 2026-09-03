@@ -50,6 +50,19 @@ Model? loadingModelOf(List<Model> models) {
   return null;
 }
 
+/// Thrown by [ModelsNotifier.loadModel] when another model is already
+/// loading. A distinct type (rather than a generic [StateError]) so callers
+/// can catch and show feedback for exactly this case without also catching
+/// — and double-showing feedback for — a genuine backend load failure,
+/// which propagates as a different exception and is already surfaced via
+/// `inferenceNotifierProvider`'s `AsyncError` state.
+class ModelAlreadyLoadingException implements Exception {
+  const ModelAlreadyLoadingException();
+
+  @override
+  String toString() => 'Another model is already loading';
+}
+
 /// Whether [ModelsNotifier.build]'s stale-state reconciliation has already
 /// run this app session.
 ///
@@ -246,19 +259,25 @@ class ModelsNotifier extends _$ModelsNotifier {
 
   /// Load a downloaded model into the inference engine (with RAM check in UI layer).
   ///
-  /// Throws [StateError] if another model is already loading. The Models
-  /// screen's full-screen overlay already blocks this via the UI, but that
-  /// alone isn't a real guarantee — a fast double-tap before the overlay
-  /// renders, or an accessibility tool invoking the action directly, could
-  /// still reach here. Guarding here, before anything is persisted, is what
-  /// actually prevents two concurrent loads racing the single native backend
-  /// (InferenceNotifier/LlamaEngine.instance).
+  /// Throws [ModelAlreadyLoadingException] if another model is already
+  /// loading. The Models screen's full-screen overlay already blocks this
+  /// via the UI, but that alone isn't a real guarantee — a fast double-tap
+  /// before the overlay renders, or an accessibility tool invoking the
+  /// action directly, could still reach here. Guarding here, before
+  /// anything is persisted, is what actually prevents two concurrent loads
+  /// racing the single native backend (InferenceNotifier/LlamaEngine.instance).
+  ///
+  /// A genuine backend load failure instead propagates as whatever
+  /// [InferenceNotifier.loadModel] threw — callers shouldn't show feedback
+  /// for that themselves, since it's already surfaced via
+  /// `inferenceNotifierProvider`'s `AsyncError` state (see the Models
+  /// screen's `ref.listen`); showing it again here would double up.
   Future<void> loadModel(String modelId) async {
     final repo = ref.read(modelRepositoryProvider);
     final model = repo.getById(modelId);
     if (model == null) throw StateError('Model $modelId not found');
     if (loadingModelOf(repo.getAll()) != null) {
-      throw StateError('Another model is already loading');
+      throw const ModelAlreadyLoadingException();
     }
 
     repo.save(model.copyWith(status: ModelStatus.loading));

@@ -100,4 +100,13 @@ void main() {
       expect(loadingModelOf(const []), isNull);
     });
   });
+
+  group('ModelAlreadyLoadingException', () {
+    test('toString is the exact text shown in the SnackBar', () {
+      expect(
+        const ModelAlreadyLoadingException().toString(),
+        'Another model is already loading',
+      );
+    });
+  });
 }

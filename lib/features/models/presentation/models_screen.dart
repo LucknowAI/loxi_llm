@@ -399,8 +399,19 @@ class _ModelListTile extends ConsumerWidget {
       context,
       modelSizeBytes: model.sizeBytes + (model.mmprojSizeBytes ?? 0),
     );
-    if (confirmed && context.mounted) {
-      ref.read(modelsNotifierProvider.notifier).loadModel(model.id);
+    if (!confirmed || !context.mounted) return;
+    try {
+      await ref.read(modelsNotifierProvider.notifier).loadModel(model.id);
+    } on ModelAlreadyLoadingException catch (e) {
+      // A genuine backend load failure is deliberately NOT caught here — it
+      // already surfaces via inferenceNotifierProvider's AsyncError state
+      // (see ModelsScreen's ref.listen); catching it again here would show
+      // two SnackBars for the same failure.
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 }
