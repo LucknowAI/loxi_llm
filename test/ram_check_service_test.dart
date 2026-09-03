@@ -37,6 +37,18 @@ const _smallBaseVisionModel = Model(
   mmprojSizeBytes: 209715200, // 200 MiB -> combined 2100 MiB, over threshold
 );
 
+// isMultimodalModel is driven by mmprojFilename alone; mmprojSizeBytes is a
+// separate, independently-nullable field (e.g. a sideloaded pairing, or a
+// future catalog entry that forgets to set it). This model exercises that
+// gap: vision-capable, but with no recorded mmproj size.
+const _visionModelWithUnknownMmprojSize = Model(
+  id: 'vision-unknown-mmproj-size',
+  name: 'Vision Model, Unknown Mmproj Size',
+  sizeLabel: '3 GB',
+  sizeBytes: 3221225472, // 3072 MiB
+  mmprojFilename: 'mmproj-F16.gguf',
+);
+
 void main() {
   group('isLargeModel', () {
     test('false for a small text-only model', () {
@@ -68,6 +80,14 @@ void main() {
       final msg = ramWarningMessage(_visionModel);
       expect(msg, contains('vision component'));
       expect(msg, isNot(contains('Recommended: use Gemma 3 270M')));
+    });
+
+    test('vision model with unknown mmproj size: still skips the fallback '
+        'recommendation, just without a size breakdown', () {
+      final msg = ramWarningMessage(_visionModelWithUnknownMmprojSize);
+      expect(msg, isNot(contains('Recommended: use Gemma 3 270M')));
+      expect(msg, isNot(contains('vision component')));
+      expect(msg, contains('3.0 GB'));
     });
   });
 }

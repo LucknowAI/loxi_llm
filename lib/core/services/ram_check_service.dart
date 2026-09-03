@@ -10,6 +10,11 @@ const int _warnThresholdMb = 2048;
 /// Device RAM at or above which no warning is shown regardless of model size.
 const int _safeDeviceRamMb = 6144;
 
+// Falls back to 0 when mmprojSizeBytes is unknown (mmprojFilename set but
+// the size wasn't recorded, e.g. a sideloaded pairing) — under-counts the
+// true footprint in that case, which could skip the warning for a model
+// that's borderline once its real (unknown) mmproj size is included. Not a
+// concern for today's catalog, which always sets both together.
 int _combinedSizeMb(Model model) =>
     (model.sizeBytes + (model.mmprojSizeBytes ?? 0)) ~/ (1024 * 1024);
 
@@ -27,14 +32,22 @@ bool isLargeModel(Model model) => _combinedSizeMb(model) > _warnThresholdMb;
 /// user is loading this model in the first place.
 String ramWarningMessage(Model model) {
   final totalGb = _combinedSizeMb(model) / 1024;
-  final mmprojBytes = model.mmprojSizeBytes;
-  if (isMultimodalModel(model) && mmprojBytes != null) {
+  // Gated on isMultimodalModel alone, not on mmprojSizeBytes being known —
+  // a vision model with an unrecorded mmproj size (a sideloaded pairing, or
+  // a future catalog entry that forgets to set it) must still skip the
+  // text-only fallback recommendation below. mmprojBytes only decides
+  // whether the *size breakdown* can be shown, not whether this is a vision
+  // model at all.
+  if (isMultimodalModel(model)) {
+    final mmprojBytes = model.mmprojSizeBytes;
     final baseGb = model.sizeBytes / (1024 * 1024 * 1024);
-    final mmprojGb = mmprojBytes / (1024 * 1024 * 1024);
-    return 'This model (${baseGb.toStringAsFixed(1)} GB) plus its vision '
-        'component (${mmprojGb.toStringAsFixed(1)} GB) requires approximately '
-        '${totalGb.toStringAsFixed(1)} GB of RAM on this device. '
-        'On devices with limited memory, this may cause the app to crash.';
+    final sizeSentence = mmprojBytes != null
+        ? 'This model (${baseGb.toStringAsFixed(1)} GB) plus its vision '
+            'component (${(mmprojBytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB) '
+            'requires approximately ${totalGb.toStringAsFixed(1)} GB of RAM on this device.'
+        : 'This model requires approximately ${totalGb.toStringAsFixed(1)} GB of RAM '
+            'on this device.';
+    return '$sizeSentence On devices with limited memory, this may cause the app to crash.';
   }
   return 'This model requires approximately ${totalGb.toStringAsFixed(1)} GB of RAM. '
       'On devices with limited memory, this may cause the app to crash.\n\n'
