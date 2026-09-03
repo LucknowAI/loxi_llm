@@ -359,16 +359,26 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
         // call. sampleNextToken()/nativeGenerateStreamNext below are completely
         // unchanged after this — image priming only affects how the KV cache
         // gets seeded, not how tokens get sampled.
+        // mtmd_helper_bitmap_init_from_file now returns a wrapper (bitmap +
+        // an optional video decoder context) instead of a bare mtmd_bitmap*,
+        // and takes an explicit placeholder flag + init-opt struct. We only
+        // ever hand it image files, so placeholder=false and video_ctx is
+        // expected to stay null; free it defensively if it's ever set rather
+        // than leak.
+        const mtmd_helper_init_opt init_opt = mtmd_helper_init_opt_default();
         std::vector<mtmd_bitmap*> bitmaps;
         bool bitmap_error = false;
         for (const auto& path : image_path_vec) {
-            mtmd_bitmap* bmp = mtmd_helper_bitmap_init_from_file(g_mtmd_ctx, path.c_str());
-            if (bmp == nullptr) {
+            auto res = mtmd_helper_bitmap_init_from_file(g_mtmd_ctx, path.c_str(), false, init_opt);
+            if (res.bitmap == nullptr) {
                 LOGE("Failed to load image: %s", path.c_str());
                 bitmap_error = true;
                 break;
             }
-            bitmaps.push_back(bmp);
+            if (res.video_ctx != nullptr) {
+                mtmd_helper_video_free(res.video_ctx);
+            }
+            bitmaps.push_back(res.bitmap);
         }
 
         if (bitmap_error) {
