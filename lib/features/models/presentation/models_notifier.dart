@@ -36,6 +36,20 @@ List<Model> modelsMissingFromCatalog({
   return catalog.where((m) => !existingIds.contains(m.id)).toList();
 }
 
+/// Whether [ModelsNotifier.build]'s stale-state reconciliation has already
+/// run this app session.
+///
+/// Module-level, not an instance field on the notifier: `ref.invalidateSelf()`
+/// re-runs `build()` (e.g. every `loadModel()`/`downloadModel()` call), and
+/// each invalidation gets a fresh notifier instance, so an instance field
+/// would reset on every single call — which is exactly what caused the bug
+/// this guards against. Without it, `build()`'s reconciliation (meant only to
+/// recover from a killed-app session where no backend survived) would also
+/// fire on every live invalidation, immediately flipping a model's status
+/// from `loading` back to `downloaded` the instant `loadModel()` sets it,
+/// before the UI ever had a chance to observe the loading state.
+bool _hasReconciledStaleModelState = false;
+
 @riverpod
 class ModelsNotifier extends _$ModelsNotifier {
   /// Transient live download speed in bytes/second, keyed by model id. Not
@@ -56,8 +70,14 @@ class ModelsNotifier extends _$ModelsNotifier {
       }
       models = repo.getAll();
     }
+    if (_hasReconciledStaleModelState) return models;
+    _hasReconciledStaleModelState = true;
+
     // Reconcile stale in-memory state: no backend survives an app restart,
     // so any row persisted as loaded/loading must drop back to downloaded.
+    // Runs exactly once per app session (see _hasReconciledStaleModelState) —
+    // this is a cold-start recovery step, not something to redo on every
+    // live rebuild.
     final reconciled = <Model>[];
     var changed = false;
     for (final m in models) {
