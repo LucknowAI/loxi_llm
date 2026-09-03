@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/providers/download_provider.dart';
@@ -36,6 +37,19 @@ List<Model> modelsMissingFromCatalog({
   return catalog.where((m) => !existingIds.contains(m.id)).toList();
 }
 
+/// The model currently loading, if any. Only one native backend can load at
+/// a time, so at most one entry in [models] ever has this status — but the
+/// list scan (rather than trusting a separately-tracked id) keeps this in
+/// sync with persisted state automatically. Shared by the Models screen's
+/// loading overlay and [ModelsNotifier.loadModel]'s concurrent-load guard,
+/// so both agree on exactly the same definition of "something is loading".
+Model? loadingModelOf(List<Model> models) {
+  for (final m in models) {
+    if (m.status == ModelStatus.loading) return m;
+  }
+  return null;
+}
+
 /// Whether [ModelsNotifier.build]'s stale-state reconciliation has already
 /// run this app session.
 ///
@@ -49,6 +63,40 @@ List<Model> modelsMissingFromCatalog({
 /// from `loading` back to `downloaded` the instant `loadModel()` sets it,
 /// before the UI ever had a chance to observe the loading state.
 bool _hasReconciledStaleModelState = false;
+
+/// Resets [_hasReconciledStaleModelState] so a test can exercise
+/// [ModelsNotifier.build]'s cold-start reconciliation more than once in the
+/// same process — real app runs never need this, since the flag is only
+/// ever meant to reset via an actual process restart.
+@visibleForTesting
+void resetStaleModelReconciliationForTest() {
+  _hasReconciledStaleModelState = false;
+}
+
+/// Whether [ModelsNotifier.build] should run its stale-state reconciliation
+/// this call. True (and flips the module-level flag) the first time it's
+/// called after app start or [resetStaleModelReconciliationForTest]; false
+/// every time after. Pure aside from that one flag flip — no repo/IO — so
+/// the "runs exactly once" behavior is directly unit-testable without
+/// needing a real ObjectBox store.
+bool shouldReconcileStaleModels() {
+  if (_hasReconciledStaleModelState) return false;
+  _hasReconciledStaleModelState = true;
+  return true;
+}
+
+/// Which of [models] have a `loaded`/`loading` status that can't be trusted
+/// after an app restart (no backend survives one) and should be reset to
+/// `downloaded`. Pure — returns the subset needing the fix, already
+/// `copyWith(status: downloaded)`; the caller persists them.
+List<Model> staleModelsToReconcile(List<Model> models) {
+  return [
+    for (final m in models)
+      if ((m.status == ModelStatus.loaded || m.status == ModelStatus.loading) &&
+          m.localPath != null)
+        m.copyWith(status: ModelStatus.downloaded),
+  ];
+}
 
 @riverpod
 class ModelsNotifier extends _$ModelsNotifier {
@@ -70,28 +118,27 @@ class ModelsNotifier extends _$ModelsNotifier {
       }
       models = repo.getAll();
     }
-    if (_hasReconciledStaleModelState) return models;
-    _hasReconciledStaleModelState = true;
-
     // Reconcile stale in-memory state: no backend survives an app restart,
     // so any row persisted as loaded/loading must drop back to downloaded.
-    // Runs exactly once per app session (see _hasReconciledStaleModelState) —
+    // Runs exactly once per app session (see shouldReconcileStaleModels) —
     // this is a cold-start recovery step, not something to redo on every
-    // live rebuild.
-    final reconciled = <Model>[];
-    var changed = false;
-    for (final m in models) {
-      if ((m.status == ModelStatus.loaded || m.status == ModelStatus.loading) &&
-          m.localPath != null) {
-        final fixed = m.copyWith(status: ModelStatus.downloaded);
-        repo.save(fixed);
-        reconciled.add(fixed);
-        changed = true;
-      } else {
-        reconciled.add(m);
-      }
+    // live rebuild (every loadModel()/downloadModel() call invalidates this
+    // provider, which re-runs build()).
+    if (!shouldReconcileStaleModels()) return models;
+    final stale = staleModelsToReconcile(models);
+    if (stale.isEmpty) return models;
+
+    final staleIds = stale.map((m) => m.id).toSet();
+    for (final m in stale) {
+      repo.save(m);
     }
-    return changed ? reconciled : models;
+    return [
+      for (final m in models)
+        if (staleIds.contains(m.id))
+          stale.firstWhere((s) => s.id == m.id)
+        else
+          m,
+    ];
   }
 
   /// Download a model from HuggingFace.
@@ -198,10 +245,21 @@ class ModelsNotifier extends _$ModelsNotifier {
   }
 
   /// Load a downloaded model into the inference engine (with RAM check in UI layer).
+  ///
+  /// Throws [StateError] if another model is already loading. The Models
+  /// screen's full-screen overlay already blocks this via the UI, but that
+  /// alone isn't a real guarantee — a fast double-tap before the overlay
+  /// renders, or an accessibility tool invoking the action directly, could
+  /// still reach here. Guarding here, before anything is persisted, is what
+  /// actually prevents two concurrent loads racing the single native backend
+  /// (InferenceNotifier/LlamaEngine.instance).
   Future<void> loadModel(String modelId) async {
     final repo = ref.read(modelRepositoryProvider);
     final model = repo.getById(modelId);
     if (model == null) throw StateError('Model $modelId not found');
+    if (loadingModelOf(repo.getAll()) != null) {
+      throw StateError('Another model is already loading');
+    }
 
     repo.save(model.copyWith(status: ModelStatus.loading));
     ref.invalidateSelf();

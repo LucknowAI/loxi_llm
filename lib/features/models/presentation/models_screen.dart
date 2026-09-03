@@ -7,18 +7,6 @@ import '../domain/model.dart';
 import '../domain/model_status.dart';
 import 'models_notifier.dart';
 
-/// The model currently loading, if any. Only one native backend can load at
-/// a time, so at most one entry in [models] ever has this status — but the
-/// list scan (rather than trusting a separately-tracked id) keeps this in
-/// sync with persisted state automatically, the same way the rest of this
-/// screen already reads status off [Model] directly.
-Model? loadingModelOf(List<Model> models) {
-  for (final m in models) {
-    if (m.status == ModelStatus.loading) return m;
-  }
-  return null;
-}
-
 class ModelsScreen extends ConsumerWidget {
   const ModelsScreen({super.key});
 
@@ -66,8 +54,10 @@ class ModelsScreen extends ConsumerWidget {
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',
             // Settings is a separate Scaffold slot, not covered by the
-            // body-level loading overlay below — disabled explicitly so a
-            // model load can't be interrupted by navigating away mid-load.
+            // body-level loading overlay below, so it's disabled explicitly
+            // while a load is in flight. This doesn't fully lock the screen
+            // — the bottom nav bar (outside this widget) can still switch to
+            // the Chat/Documents tab — just this one push-navigation path.
             onPressed:
                 loadingModel == null ? () => context.push('/settings') : null,
           ),
@@ -147,60 +137,71 @@ class _LoadingOverlayState extends State<_LoadingOverlay>
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
-      alignment: Alignment.center,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 64,
-              height: 64,
-              child: AnimatedBuilder(
-                animation: _controller,
-                builder: (context, _) => CustomPaint(
-                  painter: _PulsingRingsPainter(
-                    progress: _controller.value,
-                    color: colorScheme.primary,
-                  ),
-                  child: Center(
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
+    // BlockSemantics drops the semantics of everything painted before it in
+    // this same semantics scope — i.e. the model list underneath. Without
+    // it, the scrim blocks touches but a screen reader could still navigate
+    // to and activate a "hidden" row's button. liveRegion announces the
+    // loading text automatically as it appears, rather than requiring the
+    // user to have already focused this part of the screen.
+    return BlockSemantics(
+      child: Semantics(
+        liveRegion: true,
+        child: Container(
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
+          alignment: Alignment.center,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, _) => CustomPaint(
+                      painter: _PulsingRingsPainter(
+                        progress: _controller.value,
                         color: colorScheme.primary,
-                        shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        Icons.auto_awesome,
-                        size: 16,
-                        color: colorScheme.onPrimary,
+                      child: Center(
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.auto_awesome,
+                            size: 16,
+                            color: colorScheme.onPrimary,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+                const SizedBox(height: 14),
+                Text(
+                  'Loading ${widget.modelName}…',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'This can take a little longer for vision models',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
             ),
-            const SizedBox(height: 14),
-            Text(
-              'Loading ${widget.modelName}…',
-              textAlign: TextAlign.center,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'This can take a little longer for vision models',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-            ),
-          ],
+          ),
         ),
       ),
     );
