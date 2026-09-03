@@ -395,10 +395,7 @@ class _ModelListTile extends ConsumerWidget {
   }
 
   Future<void> _confirmAndLoad(BuildContext context, WidgetRef ref) async {
-    final confirmed = await RamCheckService.confirmLoad(
-      context,
-      modelSizeBytes: model.sizeBytes + (model.mmprojSizeBytes ?? 0),
-    );
+    final confirmed = await RamCheckService.confirmLoad(context, model: model);
     if (!confirmed || !context.mounted) return;
     try {
       await ref.read(modelsNotifierProvider.notifier).loadModel(model.id);
