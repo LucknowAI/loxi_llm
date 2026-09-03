@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../../core/logging/app_logger.dart';
 import '../../../core/providers/download_provider.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../data/model_catalog.dart';
@@ -114,7 +115,9 @@ class ModelsNotifier extends _$ModelsNotifier {
           downloadProgress: 1.0,
         ));
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppLogger.instance.error(
+          'ModelsNotifier', 'Failed to download model $modelId', e, st);
       final current = repo.getById(modelId);
       if (current != null) {
         repo.save(current.copyWith(status: ModelStatus.error));

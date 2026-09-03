@@ -200,15 +200,7 @@ class _ModelListTile extends ConsumerWidget {
       ModelStatus.downloaded => IconButton(
           icon: const Icon(Icons.play_arrow, color: Colors.green),
           tooltip: 'Load model',
-          onPressed: () async {
-            final confirmed = await RamCheckService.confirmLoad(
-              context,
-              modelSizeBytes: model.sizeBytes + (model.mmprojSizeBytes ?? 0),
-            );
-            if (confirmed && context.mounted) {
-              ref.read(modelsNotifierProvider.notifier).loadModel(model.id);
-            }
-          },
+          onPressed: () => _confirmAndLoad(context, ref),
         ),
       ModelStatus.loading => const SizedBox(
           width: 24,
@@ -222,14 +214,36 @@ class _ModelListTile extends ConsumerWidget {
               .read(modelsNotifierProvider.notifier)
               .unloadModel(model.id),
         ),
-      ModelStatus.error => IconButton(
-          icon: const Icon(Icons.refresh),
-          tooltip: 'Retry download',
-          onPressed: () => ref
-              .read(modelsNotifierProvider.notifier)
-              .downloadModel(model.id),
-        ),
+      // `error` covers two distinct failures: a download that never finished
+      // (no localPath yet — retry re-downloads) and a load that failed on an
+      // already-complete file (localPath set — retry re-downloading would
+      // re-request a file that's already whole, e.g. hitting the server with
+      // a range request past EOF; what the user actually wants is to retry
+      // the load, which is cheap and doesn't touch the network).
+      ModelStatus.error => model.localPath != null
+          ? IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Retry load',
+              onPressed: () => _confirmAndLoad(context, ref),
+            )
+          : IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Retry download',
+              onPressed: () => ref
+                  .read(modelsNotifierProvider.notifier)
+                  .downloadModel(model.id),
+            ),
       _ => const SizedBox.shrink(),
     };
+  }
+
+  Future<void> _confirmAndLoad(BuildContext context, WidgetRef ref) async {
+    final confirmed = await RamCheckService.confirmLoad(
+      context,
+      modelSizeBytes: model.sizeBytes + (model.mmprojSizeBytes ?? 0),
+    );
+    if (confirmed && context.mounted) {
+      ref.read(modelsNotifierProvider.notifier).loadModel(model.id);
+    }
   }
 }

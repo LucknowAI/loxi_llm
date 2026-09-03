@@ -4,6 +4,7 @@ import '../../features/models/domain/model.dart';
 import '../../features/models/domain/model_status.dart';
 import '../engine/backend_selector.dart';
 import '../engine/inference_backend.dart';
+import '../logging/app_logger.dart';
 
 part 'inference_provider.g.dart';
 
@@ -56,6 +57,8 @@ class InferenceNotifier extends _$InferenceNotifier {
     } catch (e, st) {
       loadedModel = null;
       state = AsyncError(e, st);
+      AppLogger.instance.error(
+          'InferenceNotifier', 'Failed to load model ${model.id}', e, st);
       final repo = ref.read(modelRepositoryProvider);
       repo.save(model.copyWith(status: ModelStatus.error));
       if (previousModel != null && previousModel.id != model.id) {
