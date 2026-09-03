@@ -153,8 +153,9 @@ static void rebuildSampler(float temperature, float top_p, int top_k,
     }
     auto params = llama_sampler_chain_default_params();
     g_sampler = llama_sampler_chain_init(params);
+    // llama_sampler_init_penalties gained a leading n_vocab parameter upstream.
     llama_sampler_chain_add(g_sampler,
-        llama_sampler_init_penalties(256, repeat_penalty, 0.0f, 0.0f));
+        llama_sampler_init_penalties(llama_vocab_n_tokens(g_vocab), 256, repeat_penalty, 0.0f, 0.0f));
     llama_sampler_chain_add(g_sampler, llama_sampler_init_top_k(top_k));
     llama_sampler_chain_add(g_sampler, llama_sampler_init_top_p(top_p, 1));
     llama_sampler_chain_add(g_sampler, llama_sampler_init_temp(temperature));
