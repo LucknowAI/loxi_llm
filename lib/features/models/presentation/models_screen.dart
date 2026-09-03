@@ -7,12 +7,25 @@ import '../domain/model.dart';
 import '../domain/model_status.dart';
 import 'models_notifier.dart';
 
+/// The model currently loading, if any. Only one native backend can load at
+/// a time, so at most one entry in [models] ever has this status — but the
+/// list scan (rather than trusting a separately-tracked id) keeps this in
+/// sync with persisted state automatically, the same way the rest of this
+/// screen already reads status off [Model] directly.
+Model? loadingModelOf(List<Model> models) {
+  for (final m in models) {
+    if (m.status == ModelStatus.loading) return m;
+  }
+  return null;
+}
+
 class ModelsScreen extends ConsumerWidget {
   const ModelsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final modelsAsync = ref.watch(modelsNotifierProvider);
+    final loadingModel = loadingModelOf(modelsAsync.valueOrNull ?? const []);
 
     ref.listen(inferenceNotifierProvider, (previous, next) {
       final wasLoading = previous?.isLoading ?? false;
@@ -52,36 +65,179 @@ class ModelsScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',
-            onPressed: () => context.push('/settings'),
+            // Settings is a separate Scaffold slot, not covered by the
+            // body-level loading overlay below — disabled explicitly so a
+            // model load can't be interrupted by navigating away mid-load.
+            onPressed:
+                loadingModel == null ? () => context.push('/settings') : null,
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        icon: const Icon(Icons.file_open),
-        label: const Text('Sideload'),
-        onPressed: () async {
-          try {
-            await ref.read(modelsNotifierProvider.notifier).sideloadModel();
-          } on FormatException catch (e) {
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(e.message), backgroundColor: Colors.red),
-              );
-            }
-          }
-        },
-      ),
-      body: modelsAsync.when(
-        data: (models) => ListView.builder(
-          itemCount: models.length,
-          itemBuilder: (context, index) =>
-              _ModelListTile(model: models[index]),
-        ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('Error loading models: $e')),
+      floatingActionButton: loadingModel != null
+          ? null
+          : FloatingActionButton.extended(
+              icon: const Icon(Icons.file_open),
+              label: const Text('Sideload'),
+              onPressed: () async {
+                try {
+                  await ref.read(modelsNotifierProvider.notifier).sideloadModel();
+                } on FormatException catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              },
+            ),
+      body: Stack(
+        children: [
+          modelsAsync.when(
+            data: (models) => ListView.builder(
+              itemCount: models.length,
+              itemBuilder: (context, index) =>
+                  _ModelListTile(model: models[index]),
+            ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, st) => Center(child: Text('Error loading models: $e')),
+          ),
+          // On top of the list in the Stack, so it absorbs every tap on the
+          // rows beneath it — no need to separately disable each row's own
+          // button.
+          if (loadingModel != null)
+            Positioned.fill(child: _LoadingOverlay(modelName: loadingModel.name)),
+        ],
       ),
     );
   }
+}
+
+/// Full-screen scrim shown while a model is loading: pulsing rings around a
+/// chip icon, the loading model's name, and a reassuring hint. Blocks
+/// interaction with whatever's beneath it in the Stack by simply being an
+/// opaque-enough widget on top — no manual per-row disabling needed.
+class _LoadingOverlay extends StatefulWidget {
+  const _LoadingOverlay({required this.modelName});
+
+  final String modelName;
+
+  @override
+  State<_LoadingOverlay> createState() => _LoadingOverlayState();
+}
+
+class _LoadingOverlayState extends State<_LoadingOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
+      alignment: Alignment.center,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 64,
+              height: 64,
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) => CustomPaint(
+                  painter: _PulsingRingsPainter(
+                    progress: _controller.value,
+                    color: colorScheme.primary,
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.auto_awesome,
+                        size: 16,
+                        color: colorScheme.onPrimary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Loading ${widget.modelName}…',
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'This can take a little longer for vision models',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Paints 3 rings expanding outward and fading, offset in phase by a third
+/// of a cycle each — a single [progress] value (0..1, repeating) drives all
+/// three rather than needing three separate AnimationControllers.
+class _PulsingRingsPainter extends CustomPainter {
+  _PulsingRingsPainter({required this.progress, required this.color});
+
+  final double progress;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final maxRadius = size.shortestSide / 2;
+    for (var i = 0; i < 3; i++) {
+      final t = (progress + i / 3) % 1.0;
+      // Stays within maxRadius at t=1 — the mockup's CSS version could
+      // bleed past its box since nothing sat close beneath it, but here the
+      // model name/hint text sits right below with limited clearance.
+      final radius = maxRadius * (0.3 + 0.7 * t);
+      final opacity = (1.0 - t) * 0.7;
+      final paint = Paint()
+        ..color = color.withValues(alpha: opacity)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      canvas.drawCircle(center, radius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PulsingRingsPainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.color != color;
 }
 
 class _ModelListTile extends ConsumerWidget {
