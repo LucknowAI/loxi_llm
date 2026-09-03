@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loki_llm/core/engine/inference_backend.dart';
@@ -58,6 +60,28 @@ void main() {
     test('false after a load error', () {
       const next = AsyncError<InferenceBackend?>('boom', StackTrace.empty);
       expect(stillAllowsAttachment(next, null), isFalse);
+    });
+  });
+
+  group('attachedPathToRestoreAfterSendError', () {
+    test('null when there was no attachment', () async {
+      expect(await attachedPathToRestoreAfterSendError(null), isNull);
+    });
+
+    test('returns the path when the file still exists (e.g. no-model error)', () async {
+      final file = File('${Directory.systemTemp.path}/loki-restore-ok-${DateTime.now().microsecondsSinceEpoch}.jpg');
+      await file.writeAsBytes(const [0xFF, 0xD8]);
+      addTearDown(() async {
+        if (await file.exists()) await file.delete();
+      });
+
+      expect(await attachedPathToRestoreAfterSendError(file.path), file.path);
+    });
+
+    test('null when the file is gone (e.g. missing-image error)', () async {
+      final missing =
+          '${Directory.systemTemp.path}/loki-restore-missing-${DateTime.now().microsecondsSinceEpoch}.jpg';
+      expect(await attachedPathToRestoreAfterSendError(missing), isNull);
     });
   });
 }

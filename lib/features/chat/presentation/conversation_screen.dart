@@ -37,6 +37,19 @@ bool stillAllowsAttachment(
       (next.valueOrNull?.supportsVision ?? false);
 }
 
+/// Path to put back into the composer after [ChatNotifier.send] throws, or
+/// null to leave the attachment cleared.
+///
+/// `send()` throws before persisting in two cases today: no model loaded
+/// (file still on disk — restore so the user can retry) and attached image
+/// missing (file gone — leave cleared; restoring would show a broken
+/// thumbnail while the SnackBar already asked them to re-attach).
+Future<String?> attachedPathToRestoreAfterSendError(String? imagePath) async {
+  if (imagePath == null) return null;
+  if (!await File(imagePath).exists()) return null;
+  return imagePath;
+}
+
 class ConversationScreen extends ConsumerStatefulWidget {
   const ConversationScreen({super.key, required this.conversationId});
 
@@ -99,9 +112,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     // file, so dispose()/the vision-gate below must no longer touch it —
     // otherwise a slow send() (RAG retrieval, summarization) leaves a window
     // where navigating away or switching models deletes a file the
-    // already-persisted message still points to. Only restore it here if
-    // send() throws, which today only happens before persisting (no model
-    // loaded).
+    // already-persisted message still points to. On a pre-persist throw,
+    // restore only when the file still exists (see
+    // [attachedPathToRestoreAfterSendError]).
     setState(() => _attachedImagePath = null);
     try {
       await ref
@@ -110,15 +123,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       _textController.clear();
       _scrollToBottom();
     } catch (e) {
-      if (mounted) {
-        setState(() => _attachedImagePath = imagePath);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      final restore = await attachedPathToRestoreAfterSendError(imagePath);
+      if (!mounted) return;
+      if (restore != null) {
+        setState(() => _attachedImagePath = restore);
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
