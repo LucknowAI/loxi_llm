@@ -386,8 +386,13 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
             return JNI_FALSE;
         }
 
+        // mtmd_input_text gained a text_len field upstream — mtmd_tokenize()
+        // does `std::string(text->text, text->text_len)`, so an
+        // uninitialized text_len reads garbage stack memory as a length,
+        // causing a huge bogus malloc during media preprocessing.
         mtmd_input_text input_text;
         input_text.text = text.c_str();
+        input_text.text_len = text.size();
         input_text.add_special = true;
         input_text.parse_special = true;
 

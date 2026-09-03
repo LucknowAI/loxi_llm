@@ -45,7 +45,7 @@ class InferenceNotifier extends _$InferenceNotifier {
       if (previousBackend != null) {
         await previousBackend.unloadModel();
       }
-      await backend.loadModel(model.localPath!);
+      await backend.loadModel(model.localPath!, mmprojPath: model.mmprojLocalPath);
       // Assign before [state] so listeners (e.g. load SnackBar) see the new model.
       loadedModel = model;
       state = AsyncData(backend);

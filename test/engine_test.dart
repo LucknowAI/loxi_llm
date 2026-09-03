@@ -101,6 +101,14 @@ void main() {
       final backend = _StubBackend();
       expect(backend.supportsVision, isFalse);
     });
+
+    test('default mediaMarker throws UnimplementedError', () {
+      final backend = _StubBackend();
+      expect(
+        () => backend.mediaMarker(),
+        throwsA(isA<UnimplementedError>()),
+      );
+    });
   });
 
   group('InferenceBackend.generate stopSequences', () {

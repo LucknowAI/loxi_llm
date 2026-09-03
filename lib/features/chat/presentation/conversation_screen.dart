@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../../core/engine/inference_backend.dart';
 import '../../../core/providers/download_provider.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../../../core/providers/tts_provider.dart';
@@ -18,6 +19,36 @@ import '../domain/message_role.dart';
 import 'chat_notifier.dart';
 import 'conversation_list_notifier.dart';
 import 'widgets/message_bubble.dart';
+
+/// Whether a pending image attachment should survive an inference-state
+/// change. True while a load is in flight ([next] is [AsyncLoading]) — only
+/// a settled `AsyncData`/`AsyncError` should ever decide to drop an
+/// attachment, otherwise reloading (or switching between) vision-capable
+/// models would wipe it on every transient loading tick. Once settled, true
+/// only when [loadedModel] is both catalog-multimodal and the new backend
+/// itself reports vision support.
+bool stillAllowsAttachment(
+  AsyncValue<InferenceBackend?> next,
+  Model? loadedModel,
+) {
+  if (next is AsyncLoading) return true;
+  return loadedModel != null &&
+      isMultimodalModel(loadedModel) &&
+      (next.valueOrNull?.supportsVision ?? false);
+}
+
+/// Path to put back into the composer after [ChatNotifier.send] throws, or
+/// null to leave the attachment cleared.
+///
+/// `send()` throws before persisting in two cases today: no model loaded
+/// (file still on disk — restore so the user can retry) and attached image
+/// missing (file gone — leave cleared; restoring would show a broken
+/// thumbnail while the SnackBar already asked them to re-attach).
+Future<String?> attachedPathToRestoreAfterSendError(String? imagePath) async {
+  if (imagePath == null) return null;
+  if (!await File(imagePath).exists()) return null;
+  return imagePath;
+}
 
 class ConversationScreen extends ConsumerStatefulWidget {
   const ConversationScreen({super.key, required this.conversationId});
@@ -81,9 +112,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     // file, so dispose()/the vision-gate below must no longer touch it —
     // otherwise a slow send() (RAG retrieval, summarization) leaves a window
     // where navigating away or switching models deletes a file the
-    // already-persisted message still points to. Only restore it here if
-    // send() throws, which today only happens before persisting (no model
-    // loaded).
+    // already-persisted message still points to. On a pre-persist throw,
+    // restore only when the file still exists (see
+    // [attachedPathToRestoreAfterSendError]).
     setState(() => _attachedImagePath = null);
     try {
       await ref
@@ -92,15 +123,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       _textController.clear();
       _scrollToBottom();
     } catch (e) {
-      if (mounted) {
-        setState(() => _attachedImagePath = imagePath);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      final restore = await attachedPathToRestoreAfterSendError(imagePath);
+      if (!mounted) return;
+      if (restore != null) {
+        setState(() => _attachedImagePath = restore);
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -273,11 +306,13 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final isToolsEnabled = currentConv?.toolsEnabled ?? false;
     final loadedModel = ref.watch(inferenceNotifierProvider.notifier).loadedModel;
     final agentCapable = isAgentCapableModel(loadedModel?.id);
-    // Catalog-level gate only for now — the model's actual backend.supportsVision
-    // isn't ANDed in yet because loadModel() doesn't pass mmprojPath, so no
-    // backend currently reports true. #24 wires that up alongside real
-    // vision generation.
-    final canAttachImage = loadedModel != null && isMultimodalModel(loadedModel);
+    // Catalog data (isMultimodalModel) only says the model *should* support
+    // vision; backend.supportsVision is the native-verified layer (the mmproj
+    // actually loaded and reported vision support) — both must hold before
+    // the attach button appears.
+    final canAttachImage = loadedModel != null &&
+        isMultimodalModel(loadedModel) &&
+        (backendAsync.valueOrNull?.supportsVision ?? false);
 
     final isModelLoaded = backendAsync.valueOrNull != null;
     final isStreaming = chatAsync.valueOrNull?.isStreaming ?? false;
@@ -291,8 +326,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     // null, so an in-flight send's already-persisted image is untouched.
     ref.listen(inferenceNotifierProvider, (previous, next) {
       final model = ref.read(inferenceNotifierProvider.notifier).loadedModel;
-      final stillAllowed = model != null && isMultimodalModel(model);
-      if (stillAllowed || _attachedImagePath == null) return;
+      if (stillAllowsAttachment(next, model) || _attachedImagePath == null) {
+        return;
+      }
       final stale = _attachedImagePath!;
       setState(() => _attachedImagePath = null);
       ref.read(fileStorageServiceProvider).deleteImage(stale);

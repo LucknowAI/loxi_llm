@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:loki_llm/core/engine/chat_template.dart';
 import 'package:loki_llm/features/chat/domain/conversation.dart';
 import 'package:loki_llm/features/chat/domain/message.dart';
 import 'package:loki_llm/features/chat/domain/message_role.dart';
@@ -89,6 +90,87 @@ void main() {
       final updated = msg.copyWith(content: 'Updated');
       expect(updated.content, equals('Updated'));
       expect(updated.id, equals('msg-3')); // unchanged
+    });
+  });
+
+  group('historyTurnsForPrompt', () {
+    Message msg(String content, {String? imagePath}) => Message(
+          id: 'msg-${content.hashCode}',
+          conversationId: 'conv-1',
+          role: MessageRole.user,
+          content: content,
+          createdAtMs: 0,
+          imagePath: imagePath,
+        );
+
+    // ChatTurn has no ==; compare via a (role, content) tuple instead.
+    List<(MessageRole, String)> contents(List<ChatTurn> turns) =>
+        turns.map((t) => (t.role, t.content)).toList();
+
+    test('no marker when imageMarker is null, even with an attached image', () {
+      final turns = historyTurnsForPrompt(
+        [msg('describe this', imagePath: '/tmp/a.jpg')],
+      );
+      expect(contents(turns), [(MessageRole.user, 'describe this')]);
+    });
+
+    test('prepends the marker to the last turn when it has an image', () {
+      final turns = historyTurnsForPrompt(
+        [msg('describe this', imagePath: '/tmp/a.jpg')],
+        imageMarker: '<marker>',
+      );
+      expect(contents(turns), [(MessageRole.user, '<marker>\ndescribe this')]);
+    });
+
+    test('does not mark the last turn if it has no image, even with an earlier image turn', () {
+      final turns = historyTurnsForPrompt(
+        [
+          msg('describe this', imagePath: '/tmp/a.jpg'),
+          msg('and now this follow-up, no image'),
+        ],
+        imageMarker: '<marker>',
+      );
+      expect(contents(turns), [
+        (MessageRole.user, 'describe this'),
+        (MessageRole.user, 'and now this follow-up, no image'),
+      ]);
+    });
+
+    test('only the last turn is ever marked, never an earlier one with an image', () {
+      final turns = historyTurnsForPrompt(
+        [
+          msg('first image', imagePath: '/tmp/a.jpg'),
+          msg('second image', imagePath: '/tmp/b.jpg'),
+        ],
+        imageMarker: '<marker>',
+      );
+      expect(contents(turns), [
+        (MessageRole.user, 'first image'),
+        (MessageRole.user, '<marker>\nsecond image'),
+      ]);
+    });
+  });
+
+  group('imagePathsForGeneration', () {
+    test('empty when there is no attached image', () {
+      expect(
+        imagePathsForGeneration(imagePath: null, supportsVision: true),
+        isEmpty,
+      );
+    });
+
+    test('empty when the backend does not support vision, even with an image', () {
+      expect(
+        imagePathsForGeneration(imagePath: '/tmp/a.jpg', supportsVision: false),
+        isEmpty,
+      );
+    });
+
+    test('contains the single attached image when vision is supported', () {
+      expect(
+        imagePathsForGeneration(imagePath: '/tmp/a.jpg', supportsVision: true),
+        ['/tmp/a.jpg'],
+      );
     });
   });
 
