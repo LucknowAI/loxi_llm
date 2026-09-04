@@ -84,5 +84,18 @@ void main() {
       final roundTripped = Model.fromJson(model.toJson());
       expect(roundTripped, model);
     });
+
+    test('fromJson accepts a map that omits the mmproj/optional keys entirely '
+        '(not just present-with-null) — e.g. a pre-multimodal persisted blob', () {
+      final model = Model.fromJson(const {
+        'id': 'phi3-mini-4k-q4km',
+        'name': 'Phi-3 Mini 4K Q4_K_M',
+        'sizeLabel': '2.4 GB',
+        'sizeBytes': 2391343104,
+      });
+      expect(model.id, 'phi3-mini-4k-q4km');
+      expect(model.mmprojFilename, isNull);
+      expect(model.status, ModelStatus.available);
+    });
   });
 }

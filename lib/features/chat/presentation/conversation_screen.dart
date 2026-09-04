@@ -50,6 +50,14 @@ Future<String?> attachedPathToRestoreAfterSendError(String? imagePath) async {
   return imagePath;
 }
 
+/// Whether `_sendMessage`'s composer should restore its cleared text and
+/// attachment after `send()` throws [error] — true for a pre-persist
+/// failure (nothing was actually sent, so there's something worth
+/// retrying), false for [SendFailedAfterPersistException] (the message
+/// already went through; restoring would risk a near-duplicate resend).
+bool shouldRestoreComposerAfterSendError(Object error) =>
+    error is! SendFailedAfterPersistException;
+
 class ConversationScreen extends ConsumerStatefulWidget {
   const ConversationScreen({super.key, required this.conversationId});
 
@@ -104,47 +112,49 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   Future<void> _sendMessage() async {
-    final text = _textController.text.trim();
+    final rawText = _textController.text;
+    final text = rawText.trim();
     final imagePath = _attachedImagePath;
     if (text.isEmpty && imagePath == null) return;
-    // Hand off ownership of the attachment to send() immediately: once
-    // send() persists the message, the message (not the composer) owns the
-    // file, so dispose()/the vision-gate below must no longer touch it —
-    // otherwise a slow send() (RAG retrieval, summarization) leaves a window
-    // where navigating away or switching models deletes a file the
-    // already-persisted message still points to. send() distinguishes a
-    // pre-persist throw (nothing sent — leave the typed text as-is for a
-    // retry, and restore the attachment, but only when the file still
-    // exists, see [attachedPathToRestoreAfterSendError]) from a
-    // post-persist one ([SendFailedAfterPersistException] — the message
-    // went through, so the composer clears exactly as it would on success).
+    // Clear the composer immediately/optimistically, text and attachment
+    // together, rather than waiting for send() to resolve — which for an
+    // agent-mode turn can take a long time (it awaits the whole turn, not
+    // just the initial call). Hand off ownership of the attachment to
+    // send() at the same time: once it persists the message, the message
+    // (not the composer) owns the file, so dispose()/the vision-gate below
+    // must no longer touch it — otherwise a slow send() (RAG retrieval,
+    // summarization) leaves a window where navigating away or switching
+    // models deletes a file the already-persisted message still points to.
+    //
+    // On a pre-persist throw (nothing sent), both are restored together —
+    // the attachment only if the file still exists, see
+    // [attachedPathToRestoreAfterSendError]. On a post-persist one
+    // ([SendFailedAfterPersistException]), neither is restored: the message
+    // already went through, so putting the text/attachment back would risk
+    // a near-duplicate resend. See [shouldRestoreComposerAfterSendError].
+    _textController.clear();
     setState(() => _attachedImagePath = null);
     try {
       await ref
           .read(chatNotifierProvider(widget.conversationId).notifier)
           .send(text, imagePath: imagePath);
-      _textController.clear();
       _scrollToBottom();
-    } on SendFailedAfterPersistException catch (e) {
-      // The message was already persisted and is showing in the chat above
-      // — clear the composer the same as on success (there's nothing left
-      // to retry), just surface that generation itself failed.
-      _textController.clear();
-      _scrollToBottom();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
-      }
     } catch (e) {
-      final restore = await attachedPathToRestoreAfterSendError(imagePath);
       if (!mounted) return;
-      if (restore != null) {
-        setState(() => _attachedImagePath = restore);
+      final shouldRestore = shouldRestoreComposerAfterSendError(e);
+      if (shouldRestore) {
+        _textController.text = rawText;
+        final restore = await attachedPathToRestoreAfterSendError(imagePath);
+        if (!mounted) return;
+        if (restore != null) setState(() => _attachedImagePath = restore);
+      } else {
+        // The message was already persisted and is showing in the chat
+        // above — nothing to retry, just scroll to it.
+        _scrollToBottom();
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: $e'),
+          content: Text(shouldRestore ? 'Error: $e' : 'Message sent, but: $e'),
           backgroundColor: Colors.red,
         ),
       );

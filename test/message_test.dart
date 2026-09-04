@@ -69,5 +69,18 @@ void main() {
       final roundTripped = Message.fromJson(message.toJson());
       expect(roundTripped, message);
     });
+
+    test('fromJson accepts a map that omits imagePath entirely (not just '
+        'present-with-null) — e.g. a pre-multimodal persisted blob', () {
+      final message = Message.fromJson(const {
+        'id': 'msg-1',
+        'conversationId': 'conv-1',
+        'role': 'user',
+        'content': 'hello',
+        'createdAtMs': 0,
+      });
+      expect(message.id, 'msg-1');
+      expect(message.imagePath, isNull);
+    });
   });
 }

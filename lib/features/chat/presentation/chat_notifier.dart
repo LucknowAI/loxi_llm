@@ -183,27 +183,31 @@ class ChatNotifier extends _$ChatNotifier {
     );
     msgRepo.save(userMsg);
 
-    // Update conversation title if this is the first message
-    final conversation = convRepo.getById(conversationId);
-    if (conversation != null && conversation.title == 'New conversation') {
-      final title = firstMessageTitle(userText);
-      convRepo.save(conversation.copyWith(title: title, updatedAtMs: now));
-      ref.invalidate(conversationListNotifierProvider);
-    }
-
-    // Update UI with user message + signal streaming start
-    final current = state.requireValue;
-    state = AsyncData(current.copyWith(
-      messages: [...current.messages, userMsg],
-      streamingText: '',
-    ));
-
-    // Anything after streamingText is set must clear it on failure — otherwise
-    // isStreaming stays true, Stop does nothing useful (no native stream yet),
-    // and the composer refuses new sends. Stream listen errors are handled by
-    // onError below; this covers awaits that throw before a subscription exists
-    // (_ensureSummary, mediaMarker, RAG retrieve, agent setup).
+    // Everything from here on is post-persist: the message is already sent,
+    // so any failure below must reach the caller as
+    // SendFailedAfterPersistException, never a bare rethrow — including
+    // state.requireValue below, which throws if state is currently
+    // AsyncError from a previous turn's failed generation. That throw sat
+    // outside this try in an earlier version of this fix, defeating the
+    // whole point: a send right after a failed one would still look
+    // pre-persist to the caller despite msgRepo.save() above having already
+    // run.
     try {
+      // Update conversation title if this is the first message
+      final conversation = convRepo.getById(conversationId);
+      if (conversation != null && conversation.title == 'New conversation') {
+        final title = firstMessageTitle(userText);
+        convRepo.save(conversation.copyWith(title: title, updatedAtMs: now));
+        ref.invalidate(conversationListNotifierProvider);
+      }
+
+      // Update UI with user message + signal streaming start
+      final current = state.requireValue;
+      state = AsyncData(current.copyWith(
+        messages: [...current.messages, userMsg],
+        streamingText: '',
+      ));
+
       // Resolve the running model + template once — used by summarization and by
       // both the agent and streaming paths. The loaded model is authoritative
       // (the persisted ModelStatus.loaded flag is reset on startup, and
@@ -398,7 +402,10 @@ class ChatNotifier extends _$ChatNotifier {
       if (state.valueOrNull != null) {
         state = AsyncData(state.requireValue.copyWith(clearStreaming: true));
       }
-      throw SendFailedAfterPersistException(e);
+      // throwWithStackTrace rather than a plain throw so the wrapper's stack
+      // trace still points at where [e] actually originated, not just this
+      // catch block.
+      Error.throwWithStackTrace(SendFailedAfterPersistException(e), st);
     }
   }
 

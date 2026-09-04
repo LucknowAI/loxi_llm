@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loki_llm/core/engine/inference_backend.dart';
+import 'package:loki_llm/features/chat/presentation/chat_notifier.dart';
 import 'package:loki_llm/features/chat/presentation/conversation_screen.dart';
 import 'package:loki_llm/features/models/domain/model.dart';
 
@@ -82,6 +83,31 @@ void main() {
       final missing =
           '${Directory.systemTemp.path}/loki-restore-missing-${DateTime.now().microsecondsSinceEpoch}.jpg';
       expect(await attachedPathToRestoreAfterSendError(missing), isNull);
+    });
+  });
+
+  group('shouldRestoreComposerAfterSendError', () {
+    test('true for a pre-persist failure (nothing was sent — worth retrying)', () {
+      expect(
+        shouldRestoreComposerAfterSendError(StateError('No model loaded')),
+        isTrue,
+      );
+      expect(
+        shouldRestoreComposerAfterSendError(
+          StateError('Attached image is no longer available. Please re-attach.'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('false for a post-persist failure (message already sent — nothing '
+        'to retry, restoring risks a near-duplicate resend)', () {
+      expect(
+        shouldRestoreComposerAfterSendError(
+          const SendFailedAfterPersistException('mediaMarker failed'),
+        ),
+        isFalse,
+      );
     });
   });
 }
