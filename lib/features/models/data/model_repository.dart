@@ -61,6 +61,10 @@ class ModelRepository {
         huggingFaceRepo: e.huggingFaceRepo,
         filename: e.filename,
         format: e.format,
+        mmprojFilename: e.mmprojFilename,
+        mmprojHuggingFaceRepo: e.mmprojHuggingFaceRepo,
+        mmprojLocalPath: e.mmprojLocalPath,
+        mmprojSizeBytes: e.mmprojSizeBytes,
       );
 
   void _updateEntity(ModelEntity e, Model m) {
@@ -74,5 +78,9 @@ class ModelRepository {
     e.huggingFaceRepo = m.huggingFaceRepo;
     e.filename = m.filename;
     e.format = m.format;
+    e.mmprojFilename = m.mmprojFilename;
+    e.mmprojHuggingFaceRepo = m.mmprojHuggingFaceRepo;
+    e.mmprojLocalPath = m.mmprojLocalPath;
+    e.mmprojSizeBytes = m.mmprojSizeBytes;
   }
 }

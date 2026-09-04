@@ -17,6 +17,8 @@
 #include <android/log.h>
 
 #include "llama.h"
+#include "mtmd.h"
+#include "mtmd-helper.h"
 
 #define LOG_TAG "LlamaEngine"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -29,6 +31,7 @@ static llama_context* g_context = nullptr;
 static const llama_vocab* g_vocab = nullptr;
 static llama_sampler* g_sampler = nullptr;  // penalties -> top_k -> top_p -> temp -> dist (no grammar)
 static llama_sampler* g_grammar = nullptr;  // lazy GBNF grammar, applied separately by sampleNextToken
+static mtmd_context* g_mtmd_ctx = nullptr;  // vision projector, null when no mmproj was loaded
 static std::mutex g_mutex;
 static std::atomic<bool> g_should_stop{false};
 
@@ -230,12 +233,13 @@ extern "C" {
 JNIEXPORT jboolean JNICALL
 Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeInitModel(
     JNIEnv* env, jobject, jstring model_path,
-    jint n_threads, jint context_size, jint batch_size) {
+    jint n_threads, jint context_size, jint batch_size, jstring mmproj_path) {
     std::lock_guard<std::mutex> lock(g_mutex);
 
     // Free any previously loaded model.
     if (g_sampler) { llama_sampler_free(g_sampler); g_sampler = nullptr; }
     if (g_grammar) { llama_sampler_free(g_grammar); g_grammar = nullptr; }
+    if (g_mtmd_ctx) { mtmd_free(g_mtmd_ctx); g_mtmd_ctx = nullptr; }
     if (g_context) { llama_free(g_context); g_context = nullptr; }
     if (g_model) { llama_free_model(g_model); g_model = nullptr; }
     g_gen.reset();
@@ -269,28 +273,65 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeInitModel(
         return JNI_FALSE;
     }
 
+    if (mmproj_path != nullptr) {
+        const char* mmproj_cstr = env->GetStringUTFChars(mmproj_path, nullptr);
+        mtmd_context_params mtmd_params = mtmd_context_params_default();
+        mtmd_params.use_gpu = false;
+        mtmd_params.n_threads = n_threads;
+        mtmd_params.print_timings = false;
+        g_mtmd_ctx = mtmd_init_from_file(mmproj_cstr, g_model, mtmd_params);
+        env->ReleaseStringUTFChars(mmproj_path, mmproj_cstr);
+        if (g_mtmd_ctx == nullptr) {
+            LOGE("Failed to load mmproj — continuing as text-only");
+        } else {
+            LOGI("mmproj loaded, vision=%d", mtmd_support_vision(g_mtmd_ctx));
+        }
+    }
+
     LOGI("Model loaded (n_ctx=%d)", (int) llama_n_ctx(g_context));
     return JNI_TRUE;
 }
 
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
+Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeSupportsVision(
+    JNIEnv*, jobject) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return (g_mtmd_ctx != nullptr && mtmd_support_vision(g_mtmd_ctx)) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeMediaMarker(
+    JNIEnv* env, jobject) {
+    return env->NewStringUTF(mtmd_default_marker());
+}
+
+JNIEXPORT jboolean JNICALL
 Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
     JNIEnv* env, jobject, jstring prompt,
     jfloat temperature, jfloat top_p, jint top_k,
     jint max_tokens, jfloat repeat_penalty, jobjectArray stop_sequences,
-    jstring grammar) {
+    jstring grammar, jobjectArray image_paths) {
     std::lock_guard<std::mutex> lock(g_mutex);
 
     if (!g_model || !g_context || !g_vocab) {
         LOGE("nativeGenerateStreamInit: model not loaded");
-        return;
+        return JNI_FALSE;
     }
 
     const std::vector<std::string> stops = jStringArrayToVector(env, stop_sequences);
 
+    // Rebuilt here, immediately adjacent to acquiring grammar_cstr, rather
+    // than after the prompt is processed: the sampler chain doesn't depend
+    // on anything computed below, and holding a JNI string across several
+    // early-return paths (tokenize/decode/eval failures) leaked it on every
+    // one of them.
     const char* grammar_cstr = nullptr;
     if (grammar != nullptr) {
         grammar_cstr = env->GetStringUTFChars(grammar, nullptr);
+    }
+    rebuildSampler(temperature, top_p, top_k, repeat_penalty, grammar_cstr);
+    if (grammar_cstr != nullptr) {
+        env->ReleaseStringUTFChars(grammar, grammar_cstr);
     }
 
     g_should_stop = false;
@@ -303,48 +344,138 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
     std::string text(prompt_str);
     env->ReleaseStringUTFChars(prompt, prompt_str);
 
-    // Tokenize.
-    const int n_prompt = -llama_tokenize(g_vocab, text.c_str(), text.size(), nullptr, 0, true, true);
-    std::vector<llama_token> tokens(n_prompt);
-    if (llama_tokenize(g_vocab, text.c_str(), text.size(), tokens.data(), tokens.size(), true, true) < 0) {
-        LOGE("Failed to tokenize prompt");
-        return;
-    }
-
-    // Keep the prompt within the context window, reserving room to generate.
+    const std::vector<std::string> image_path_vec = jStringArrayToVector(env, image_paths);
     const int n_ctx = (int) llama_n_ctx(g_context);
-    const int max_prompt = n_ctx > max_tokens + 4 ? n_ctx - max_tokens : n_ctx - 1;
-    if (max_prompt > 0 && (int) tokens.size() > max_prompt) {
-        const int overflow = (int) tokens.size() - max_prompt;
-        tokens.erase(tokens.begin(), tokens.begin() + overflow);
-        LOGI("Truncated prompt by %d tokens to fit n_ctx=%d", overflow, n_ctx);
+    int n_pos_after_prompt = 0;
+
+    if (!image_path_vec.empty() && g_mtmd_ctx == nullptr) {
+        LOGE("Images provided but no mmproj loaded — falling back to text-only");
     }
 
-    // Decode the prompt in chunks no larger than n_batch (a single oversized
-    // llama_decode aborts on GGML_ASSERT(n_tokens_all <= n_batch)).
-    const uint32_t n_batch = llama_n_batch(g_context);
-    for (size_t i = 0; i < tokens.size(); i += n_batch) {
-        const size_t remaining = tokens.size() - i;
-        const size_t chunk = remaining < (size_t) n_batch ? remaining : (size_t) n_batch;
-        llama_batch batch = llama_batch_get_one(tokens.data() + i, chunk);
-        if (llama_decode(g_context, batch) != 0) {
-            LOGE("Failed to decode prompt chunk at %zu", i);
-            return;
+    if (!image_path_vec.empty() && g_mtmd_ctx != nullptr) {
+        // Multimodal priming: build bitmaps from the given image files, tokenize
+        // prompt+images together (the prompt must already contain the marker
+        // returned by mtmd_default_marker()), then prime the KV cache in one
+        // call. sampleNextToken()/nativeGenerateStreamNext below are completely
+        // unchanged after this — image priming only affects how the KV cache
+        // gets seeded, not how tokens get sampled.
+        // mtmd_helper_bitmap_init_from_file now returns a wrapper (bitmap +
+        // an optional video decoder context) instead of a bare mtmd_bitmap*,
+        // and takes an explicit placeholder flag + init-opt struct. We only
+        // ever hand it image files, so placeholder=false and video_ctx is
+        // expected to stay null; free it defensively if it's ever set rather
+        // than leak.
+        const mtmd_helper_init_opt init_opt = mtmd_helper_init_opt_default();
+        std::vector<mtmd_bitmap*> bitmaps;
+        bool bitmap_error = false;
+        for (const auto& path : image_path_vec) {
+            auto res = mtmd_helper_bitmap_init_from_file(g_mtmd_ctx, path.c_str(), false, init_opt);
+            if (res.bitmap == nullptr) {
+                LOGE("Failed to load image: %s", path.c_str());
+                bitmap_error = true;
+                break;
+            }
+            if (res.video_ctx != nullptr) {
+                mtmd_helper_video_free(res.video_ctx);
+            }
+            bitmaps.push_back(res.bitmap);
         }
-    }
 
-    rebuildSampler(temperature, top_p, top_k, repeat_penalty, grammar_cstr);
-    if (grammar_cstr != nullptr) {
-        env->ReleaseStringUTFChars(grammar, grammar_cstr);
+        if (bitmap_error) {
+            for (auto* bmp : bitmaps) mtmd_bitmap_free(bmp);
+            return JNI_FALSE;
+        }
+
+        // mtmd_input_text gained a text_len field upstream — mtmd_tokenize()
+        // does `std::string(text->text, text->text_len)`, so an
+        // uninitialized text_len reads garbage stack memory as a length,
+        // causing a huge bogus malloc during media preprocessing.
+        mtmd_input_text input_text;
+        input_text.text = text.c_str();
+        input_text.text_len = text.size();
+        input_text.add_special = true;
+        input_text.parse_special = true;
+
+        // mtmd_tokenize() takes `const mtmd_bitmap**`; a std::vector<mtmd_bitmap*>
+        // doesn't implicitly convert (multi-level const-qualification isn't an
+        // implicit conversion in C++), so build a const-pointer view for the call
+        // while keeping the owning vector for the mtmd_bitmap_free() cleanup below.
+        std::vector<const mtmd_bitmap*> const_bitmaps(bitmaps.begin(), bitmaps.end());
+
+        mtmd_input_chunks* chunks = mtmd_input_chunks_init();
+        const int32_t tok_ret = mtmd_tokenize(
+            g_mtmd_ctx, chunks, &input_text, const_bitmaps.data(), const_bitmaps.size());
+        for (auto* bmp : bitmaps) mtmd_bitmap_free(bmp);
+        if (tok_ret != 0) {
+            LOGE("Failed to tokenize multimodal prompt, ret=%d", tok_ret);
+            mtmd_input_chunks_free(chunks);
+            return JNI_FALSE;
+        }
+
+        // Context-window pre-check: make sure the primed prompt plus
+        // generation headroom will actually fit before priming the KV cache.
+        const int n_pos_needed = (int) mtmd_helper_get_n_pos(chunks);
+        if (n_pos_needed + max_tokens > n_ctx) {
+            LOGE("Multimodal prompt+image too large for context: needs %d + %d headroom, have n_ctx=%d",
+                 n_pos_needed, max_tokens, n_ctx);
+            mtmd_input_chunks_free(chunks);
+            return JNI_FALSE;
+        }
+
+        llama_pos new_n_past = 0;
+        const uint32_t n_batch = llama_n_batch(g_context);
+        const int32_t eval_ret = mtmd_helper_eval_chunks(
+            g_mtmd_ctx, g_context, chunks,
+            /*n_past=*/0, /*seq_id=*/0, (int32_t) n_batch,
+            /*logits_last=*/true, &new_n_past);
+        mtmd_input_chunks_free(chunks);
+        if (eval_ret != 0) {
+            LOGE("Failed to eval multimodal prompt, ret=%d", eval_ret);
+            return JNI_FALSE;
+        }
+
+        n_pos_after_prompt = (int) new_n_past;
+    } else {
+        // Tokenize.
+        const int n_prompt = -llama_tokenize(g_vocab, text.c_str(), text.size(), nullptr, 0, true, true);
+        std::vector<llama_token> tokens(n_prompt);
+        if (llama_tokenize(g_vocab, text.c_str(), text.size(), tokens.data(), tokens.size(), true, true) < 0) {
+            LOGE("Failed to tokenize prompt");
+            return JNI_FALSE;
+        }
+
+        // Keep the prompt within the context window, reserving room to generate.
+        const int max_prompt = n_ctx > max_tokens + 4 ? n_ctx - max_tokens : n_ctx - 1;
+        if (max_prompt > 0 && (int) tokens.size() > max_prompt) {
+            const int overflow = (int) tokens.size() - max_prompt;
+            tokens.erase(tokens.begin(), tokens.begin() + overflow);
+            LOGI("Truncated prompt by %d tokens to fit n_ctx=%d", overflow, n_ctx);
+        }
+
+        // Decode the prompt in chunks no larger than n_batch (a single oversized
+        // llama_decode aborts on GGML_ASSERT(n_tokens_all <= n_batch)).
+        const uint32_t n_batch = llama_n_batch(g_context);
+        for (size_t i = 0; i < tokens.size(); i += n_batch) {
+            const size_t remaining = tokens.size() - i;
+            const size_t chunk = remaining < (size_t) n_batch ? remaining : (size_t) n_batch;
+            llama_batch batch = llama_batch_get_one(tokens.data() + i, chunk);
+            if (llama_decode(g_context, batch) != 0) {
+                LOGE("Failed to decode prompt chunk at %zu", i);
+                return JNI_FALSE;
+            }
+        }
+
+        n_pos_after_prompt = (int) tokens.size();
     }
 
     g_gen.active = true;
-    g_gen.n_pos = (int) tokens.size();
+    g_gen.n_pos = n_pos_after_prompt;
     g_gen.n_ctx = n_ctx;
     g_gen.remaining = max_tokens;
     g_gen.stops = stops;
     g_gen.max_stop_len = longestStopLen(stops);
     LOGI("Stream init: %d prompt tokens, up to %d generated", g_gen.n_pos, max_tokens);
+    return JNI_TRUE;
 }
 
 JNIEXPORT jstring JNICALL
@@ -437,6 +568,7 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeFreeModel(
     g_gen.reset();
     if (g_sampler) { llama_sampler_free(g_sampler); g_sampler = nullptr; }
     if (g_grammar) { llama_sampler_free(g_grammar); g_grammar = nullptr; }
+    if (g_mtmd_ctx) { mtmd_free(g_mtmd_ctx); g_mtmd_ctx = nullptr; }
     if (g_context) { llama_free(g_context); g_context = nullptr; }
     if (g_model) { llama_free_model(g_model); g_model = nullptr; }
     g_vocab = nullptr;

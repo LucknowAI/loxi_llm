@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/engine/chat_template.dart';
 import '../../../core/logging/app_logger.dart';
@@ -48,6 +49,99 @@ class ChatState {
   }
 }
 
+/// Whether [ChatNotifier.send] should proceed — either non-empty text or an
+/// attached image is required (image-only sends are allowed).
+bool shouldSendMessage(String text, String? imagePath) =>
+    text.trim().isNotEmpty || imagePath != null;
+
+/// Thrown by [ChatNotifier.send] when it fails *after* the user message was
+/// already persisted (e.g. `mediaMarker()` or agent-turn setup throwing) —
+/// as opposed to a pre-persist failure (no model loaded, attached image
+/// missing) where nothing was sent yet.
+///
+/// Distinct from a plain rethrow so callers (the composer) can tell the two
+/// apart: on this exception the message did go through, so the composer
+/// should clear its input the same as on success, not restore stale
+/// text/attachment state for a retry — there's nothing left to retry.
+class SendFailedAfterPersistException implements Exception {
+  const SendFailedAfterPersistException(this.cause);
+
+  /// The original exception that triggered this (e.g. a PlatformException
+  /// from a failed native call, or an agent-setup error). Preserved for
+  /// display — [toString] shows it directly rather than double-wrapping.
+  final Object cause;
+
+  @override
+  String toString() => cause.toString();
+}
+
+/// Conversation title derived from a first message's text: 'Image' for an
+/// image-only send (no text), otherwise the text, truncated past 50 chars.
+String firstMessageTitle(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return 'Image';
+  return trimmed.length > 50 ? '${trimmed.substring(0, 47)}...' : trimmed;
+}
+
+/// Maps already-windowed history messages to template turns.
+///
+/// When [imageMarker] is non-null, it's prepended once to the *last* turn's
+/// content — and only if that turn's own message has an attached image.
+/// Never an earlier turn, even one with its own image: [generate]'s
+/// `imagePaths` only ever re-supplies the current turn's image on each call,
+/// so a marker anywhere else would reference a bitmap that was never given.
+List<ChatTurn> historyTurnsForPrompt(
+  List<Message> windowedHistory, {
+  String? imageMarker,
+}) {
+  return [
+    for (var i = 0; i < windowedHistory.length; i++)
+      ChatTurn(
+        windowedHistory[i].role,
+        (imageMarker != null &&
+                i == windowedHistory.length - 1 &&
+                windowedHistory[i].imagePath != null)
+            ? '$imageMarker\n${windowedHistory[i].content}'
+            : windowedHistory[i].content,
+      ),
+  ];
+}
+
+/// Messages to seed a new turn's [ChatState] with, recovering from
+/// [fetchFromRepo] when [currentMessages] is unusable.
+///
+/// `state.valueOrNull` is null right after a previous turn's generation
+/// failed — [ChatNotifier]'s stream `onError` and the agent loop's catch
+/// both set `state` to a plain `AsyncError` with no previous value attached.
+/// Without this fallback, [ChatNotifier.send] reading `state.requireValue`
+/// would throw that stale error before the new message ever got a chance to
+/// generate a response — and since nothing ever moves `state` back to
+/// `AsyncData` on its own, every later send in the conversation would fail
+/// the exact same way.
+///
+/// [fetchFromRepo] is only called when needed (never on the common
+/// success path) and its result already includes [excludingMessageId] — the
+/// new message, already persisted by the time this runs — filtered back out
+/// here so the caller's own append doesn't duplicate it.
+List<Message> priorMessagesFor({
+  required List<Message>? currentMessages,
+  required List<Message> Function() fetchFromRepo,
+  required String excludingMessageId,
+}) {
+  if (currentMessages != null) return currentMessages;
+  return fetchFromRepo().where((m) => m.id != excludingMessageId).toList();
+}
+
+/// The image paths to pass to [InferenceBackend.generate] for this turn:
+/// the single attached image, but only when the backend actually supports
+/// vision — never sent otherwise, even if one is attached (e.g. a stale
+/// attachment surviving a model switch away from a vision-capable model).
+List<String> imagePathsForGeneration({
+  required String? imagePath,
+  required bool supportsVision,
+}) =>
+    (imagePath != null && supportsVision) ? [imagePath] : const [];
+
 @riverpod
 class ChatNotifier extends _$ChatNotifier {
   StreamSubscription<String>? _tokenSub;
@@ -67,9 +161,14 @@ class ChatNotifier extends _$ChatNotifier {
   static const _logTag = 'ChatNotifier';
 
   /// Send a user message and stream the assistant response.
-  Future<void> send(String userText) async {
+  ///
+  /// [imagePath], when set, is attached to and persisted with the user
+  /// message. It also grounds generation when the loaded backend reports
+  /// [InferenceBackend.supportsVision] — otherwise it's persisted/displayed
+  /// only, same as before.
+  Future<void> send(String userText, {String? imagePath}) async {
     final log = AppLogger.instance;
-    if (userText.trim().isEmpty) return;
+    if (!shouldSendMessage(userText, imagePath)) return;
     _stopRequested = false;
 
     log.info(_logTag,
@@ -82,6 +181,18 @@ class ChatNotifier extends _$ChatNotifier {
     }
     log.debug(_logTag, 'backend=${backend.runtimeType} isLoaded=${backend.isLoaded}');
 
+    // Same "don't send" contract as the no-model-loaded guard above: verify
+    // before anything is persisted, not after. An image can vanish between
+    // attach and send (deleted, storage revoked); a missing/corrupt file
+    // reaching mtmd_helper_bitmap_init_from_file surfaces as a cryptic
+    // native failure instead of a clean, actionable error.
+    if (imagePath != null &&
+        backend.supportsVision &&
+        !await File(imagePath).exists()) {
+      log.warn(_logTag, 'send() aborted — attached image no longer exists: $imagePath');
+      throw StateError('Attached image is no longer available. Please re-attach.');
+    }
+
     final convRepo = ref.read(conversationRepositoryProvider);
     final msgRepo = ref.read(messageRepositoryProvider);
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -93,185 +204,242 @@ class ChatNotifier extends _$ChatNotifier {
       role: MessageRole.user,
       content: userText.trim(),
       createdAtMs: now,
+      imagePath: imagePath,
     );
     msgRepo.save(userMsg);
 
-    // Update conversation title if this is the first message
-    final conversation = convRepo.getById(conversationId);
-    if (conversation != null && conversation.title == 'New conversation') {
-      final title = userText.trim().length > 50
-          ? '${userText.trim().substring(0, 47)}...'
-          : userText.trim();
-      convRepo.save(conversation.copyWith(title: title, updatedAtMs: now));
-      ref.invalidate(conversationListNotifierProvider);
-    }
-
-    // Update UI with user message + signal streaming start
-    final current = state.requireValue;
-    state = AsyncData(current.copyWith(
-      messages: [...current.messages, userMsg],
-      streamingText: '',
-    ));
-
-    // Resolve the running model + template once — used by summarization and by
-    // both the agent and streaming paths. The loaded model is authoritative
-    // (the persisted ModelStatus.loaded flag is reset on startup, and
-    // conversation.modelId is often empty). Precedence: loaded → conversation →
-    // generic fallback.
-    final loadedModel = ref.read(inferenceNotifierProvider.notifier).loadedModel;
-    final modelName = loadedModel?.name ?? 'unknown';
-    final modelId = loadedModel?.id ?? (conversation?.modelId ?? '');
-    final template = ChatTemplate.forModelId(modelId);
-
-    // Rolling memory: fold any newly-evicted (beyond-window) messages into the
-    // conversation summary before building the prompt.
-    final allMessages = [...current.messages, userMsg];
-    final summary = await _ensureSummary(
-      allMessages: allMessages,
-      existingSummary: conversation?.summary ?? '',
-      summarizedCount: conversation?.summarizedCount ?? 0,
-      template: template,
-    );
-
-    // Tool-calling agent path (per-conversation toggle). When enabled and the
-    // loaded model supports tools, the model decides which tools to call; the
-    // auto-RAG/streaming path below is skipped. Plain chat is unchanged.
-    if (conversation?.toolsEnabled ?? false) {
-      final loadedModel =
-          ref.read(inferenceNotifierProvider.notifier).loadedModel;
-      if (isAgentCapableModel(loadedModel?.id)) {
-        final ragEnabled = conversation?.ragEnabled ?? false;
-        final ragChunks =
-            await _retrieveRagChunks(userMsg.content, ragEnabled);
-        await _runAgentTurn(
-          allMessages,
-          template,
-          modelName,
-          summary,
-          ragEnabled: ragEnabled,
-          ragChunks: ragChunks,
-        );
-        return;
+    // Everything from here on is post-persist: the message is already sent,
+    // so any failure below must reach the caller as
+    // SendFailedAfterPersistException, never a bare rethrow. This try used to
+    // start further down, after building `current` via state.requireValue —
+    // which throws if state is currently AsyncError from a previous turn's
+    // failed generation — so a send right after a failed one would still
+    // look pre-persist to the caller despite msgRepo.save() above having
+    // already run. See priorMessagesFor for how `current` is built now.
+    try {
+      // Update conversation title if this is the first message
+      final conversation = convRepo.getById(conversationId);
+      if (conversation != null && conversation.title == 'New conversation') {
+        final title = firstMessageTitle(userText);
+        convRepo.save(conversation.copyWith(title: title, updatedAtMs: now));
+        ref.invalidate(conversationListNotifierProvider);
       }
-      log.warn(_logTag,
-          'tools enabled but model ${loadedModel?.id ?? "none"} does not support agent mode; using plain chat');
-    }
 
-    // Build RAG context if enabled for this conversation
-    final ragEnabled = conversation?.ragEnabled ?? false;
-    log.debug(_logTag,
-        'ragEnabled=$ragEnabled historyMessages=${current.messages.length}');
-    List<DocumentChunk> ragChunks = const [];
-    if (ragEnabled) {
-      ragChunks = await _retrieveRagChunks(userMsg.content, ragEnabled);
-    }
-
-    // Build the prompt with the model's real chat template + rolling summary.
-    // RAG chunks fold into the last user turn (see ChatTemplate.format).
-    final prompt = buildPrompt(
-      template: template,
-      turns: _historyTurns(allMessages),
-      systemPrompt: conversation?.systemPrompt ?? '',
-      summary: summary,
-      ragContext: _buildRagContext(ragChunks),
-    );
-    // ~4 chars/token is a rough heuristic for spotting context-window issues.
-    log.info(_logTag,
-        'prompt built (${template.kind.name}): ${prompt.length} chars '
-        '(~${(prompt.length / 4).round()} tokens est)');
-
-    // Stream tokens (60-second timeout resets after each token)
-    final buffer = StringBuffer();
-    var tokenCount = 0;
-    _tokenSub?.cancel();
-
-    // Model I/O trace capture — only when the setting is enabled (zero cost
-    // otherwise). Reading the setting also syncs ModelIoLogger.enabled.
-    // Snapshot the inputs now; metrics are filled in as we stream.
-    final ioLogger = ModelIoLogger.instance;
-    final captureIo =
-        ref.read(settingsNotifierProvider).modelIoLoggingEnabled;
-    final genStartMs = DateTime.now().millisecondsSinceEpoch;
-    int? firstTokenMs;
-
-    void recordIo(TraceOutcome outcome, {String? error}) {
-      if (!captureIo) return;
-      ioLogger.record(ModelIoTrace(
-        timestampMs: genStartMs,
-        conversationId: conversationId,
-        modelName: modelName,
-        backendType: backend.runtimeType.toString(),
-        inputPrompt: prompt,
-        generationParams: backend.generationParams,
-        ragEnabled: ragEnabled,
-        ragChunks: ragChunks.map((c) => c.content).toList(),
-        outputText: buffer.toString(),
-        tokenCount: tokenCount,
-        timeToFirstTokenMs: firstTokenMs,
-        totalDurationMs: DateTime.now().millisecondsSinceEpoch - genStartMs,
-        outcome: outcome,
-        error: error,
+      // Update UI with user message + signal streaming start. See
+      // priorMessagesFor: recovers from the message repo rather than crash
+      // via state.requireValue when a previous turn's generation left state
+      // as an AsyncError with no previous value.
+      final current = ChatState(
+        messages: priorMessagesFor(
+          currentMessages: state.valueOrNull?.messages,
+          fetchFromRepo: () => msgRepo.getMessages(conversationId),
+          excludingMessageId: userMsg.id,
+        ),
+      );
+      state = AsyncData(current.copyWith(
+        messages: [...current.messages, userMsg],
+        streamingText: '',
       ));
-    }
 
-    // Flush logs to disk BEFORE entering native inference — a native crash
-    // aborts the process and Dart cannot catch it, but bytes already flushed
-    // survive, so the last line tells us we reached the native call.
-    log.info(_logTag, 'invoking native generate()');
-    await log.flush();
+      // Resolve the running model + template once — used by summarization and by
+      // both the agent and streaming paths. The loaded model is authoritative
+      // (the persisted ModelStatus.loaded flag is reset on startup, and
+      // conversation.modelId is often empty). Precedence: loaded → conversation →
+      // generic fallback.
+      final loadedModel = ref.read(inferenceNotifierProvider.notifier).loadedModel;
+      final modelName = loadedModel?.name ?? 'unknown';
+      final modelId = loadedModel?.id ?? (conversation?.modelId ?? '');
+      final template = ChatTemplate.forModelId(modelId);
 
-    _tokenSub = backend
-        .generate(prompt, stopSequences: template.stopSequences)
-        .timeout(const Duration(seconds: 60))
-        .listen(
-      (token) {
-        if (tokenCount == 0) {
-          log.info(_logTag, 'first token received');
-          firstTokenMs = DateTime.now().millisecondsSinceEpoch - genStartMs;
+      // Rolling memory: fold any newly-evicted (beyond-window) messages into the
+      // conversation summary before building the prompt.
+      final allMessages = [...current.messages, userMsg];
+      final summary = await _ensureSummary(
+        allMessages: allMessages,
+        existingSummary: conversation?.summary ?? '',
+        summarizedCount: conversation?.summarizedCount ?? 0,
+        template: template,
+      );
+
+      // Vision wiring for this turn only — computed once, reused by whichever
+      // path fires below (and, for the agent path, by every one of its
+      // iterations). `backend.supportsVision` is the native-verified layer:
+      // an attached image is only ever honored when the loaded mmproj actually
+      // reported vision support after load, not just because the catalog says
+      // the model is multimodal.
+      final wantsVision = imagePath != null && backend.supportsVision;
+      final imageMarker = wantsVision ? await backend.mediaMarker() : null;
+      final generationImagePaths = imagePathsForGeneration(
+        imagePath: imagePath,
+        supportsVision: backend.supportsVision,
+      );
+      // A vision-tower forward pass over an image (mtmd_helper_eval_chunks)
+      // runs CPU-only and can take minutes on-device before the first token —
+      // observed ~186s for one image on a mid-range phone — versus a few
+      // seconds for text-only prefill. Give it real headroom rather than
+      // timing out mid-encode.
+      final generationTimeout =
+          wantsVision ? const Duration(seconds: 300) : const Duration(seconds: 60);
+
+      // Tool-calling agent path (per-conversation toggle). When enabled and the
+      // loaded model supports tools, the model decides which tools to call; the
+      // auto-RAG/streaming path below is skipped. Plain chat is unchanged.
+      if (conversation?.toolsEnabled ?? false) {
+        final loadedModel =
+            ref.read(inferenceNotifierProvider.notifier).loadedModel;
+        if (isAgentCapableModel(loadedModel?.id)) {
+          final ragEnabled = conversation?.ragEnabled ?? false;
+          final ragChunks =
+              await _retrieveRagChunks(userMsg.content, ragEnabled);
+          await _runAgentTurn(
+            allMessages,
+            template,
+            modelName,
+            summary,
+            ragEnabled: ragEnabled,
+            ragChunks: ragChunks,
+            imageMarker: imageMarker,
+            imagePaths: generationImagePaths,
+          );
+          return;
         }
-        tokenCount++;
-        buffer.write(token);
-        state = AsyncData(
-          state.requireValue.copyWith(streamingText: buffer.toString()),
-        );
-      },
-      onDone: () {
-        log.info(_logTag,
-            'generation ${_stopRequested ? 'stopped' : 'done'}: '
-            '$tokenCount tokens, ${buffer.length} chars');
-        recordIo(_stopRequested ? TraceOutcome.stopped : TraceOutcome.done);
-        final assistantMs = DateTime.now().millisecondsSinceEpoch;
-        final assistantMsg = Message(
-          id: 'msg-$assistantMs',
+        log.warn(_logTag,
+            'tools enabled but model ${loadedModel?.id ?? "none"} does not support agent mode; using plain chat');
+      }
+
+      // Build RAG context if enabled for this conversation
+      final ragEnabled = conversation?.ragEnabled ?? false;
+      log.debug(_logTag,
+          'ragEnabled=$ragEnabled historyMessages=${current.messages.length}');
+      List<DocumentChunk> ragChunks = const [];
+      if (ragEnabled) {
+        ragChunks = await _retrieveRagChunks(userMsg.content, ragEnabled);
+      }
+
+      // Build the prompt with the model's real chat template + rolling summary.
+      // RAG chunks fold into the last user turn (see ChatTemplate.format).
+      final prompt = buildPrompt(
+        template: template,
+        turns: _historyTurns(allMessages, imageMarker: imageMarker),
+        systemPrompt: conversation?.systemPrompt ?? '',
+        summary: summary,
+        ragContext: _buildRagContext(ragChunks),
+      );
+      // ~4 chars/token is a rough heuristic for spotting context-window issues.
+      log.info(_logTag,
+          'prompt built (${template.kind.name}): ${prompt.length} chars '
+          '(~${(prompt.length / 4).round()} tokens est)');
+
+      // Stream tokens (60-second timeout resets after each token)
+      final buffer = StringBuffer();
+      var tokenCount = 0;
+      _tokenSub?.cancel();
+
+      // Model I/O trace capture — only when the setting is enabled (zero cost
+      // otherwise). Reading the setting also syncs ModelIoLogger.enabled.
+      // Snapshot the inputs now; metrics are filled in as we stream.
+      final ioLogger = ModelIoLogger.instance;
+      final captureIo =
+          ref.read(settingsNotifierProvider).modelIoLoggingEnabled;
+      final genStartMs = DateTime.now().millisecondsSinceEpoch;
+      int? firstTokenMs;
+
+      void recordIo(TraceOutcome outcome, {String? error}) {
+        if (!captureIo) return;
+        ioLogger.record(ModelIoTrace(
+          timestampMs: genStartMs,
           conversationId: conversationId,
-          role: MessageRole.assistant,
-          content: buffer.toString(),
-          createdAtMs: assistantMs,
-        );
-        msgRepo.save(assistantMsg);
-
-        // Update conversation updatedAt
-        final conv = convRepo.getById(conversationId);
-        if (conv != null) {
-          convRepo.save(conv.copyWith(updatedAtMs: assistantMs));
-        }
-
-        state = AsyncData(state.requireValue.copyWith(
-          messages: [...state.requireValue.messages, assistantMsg],
-          clearStreaming: true,
+          modelName: modelName,
+          backendType: backend.runtimeType.toString(),
+          inputPrompt: prompt,
+          generationParams: backend.generationParams,
+          ragEnabled: ragEnabled,
+          ragChunks: ragChunks.map((c) => c.content).toList(),
+          outputText: buffer.toString(),
+          tokenCount: tokenCount,
+          timeToFirstTokenMs: firstTokenMs,
+          totalDurationMs: DateTime.now().millisecondsSinceEpoch - genStartMs,
+          outcome: outcome,
+          error: error,
         ));
-      },
-      onError: (Object e, StackTrace st) {
-        AppLogger.instance
-            .error(_logTag, 'generation error after $tokenCount tokens', e, st);
-        recordIo(
-          e is TimeoutException ? TraceOutcome.timeout : TraceOutcome.error,
-          error: e.toString(),
-        );
-        state = AsyncError(e, st);
-      },
-      cancelOnError: true,
-    );
+      }
+
+      // Flush logs to disk BEFORE entering native inference — a native crash
+      // aborts the process and Dart cannot catch it, but bytes already flushed
+      // survive, so the last line tells us we reached the native call.
+      log.info(_logTag, 'invoking native generate()');
+      await log.flush();
+
+      _tokenSub = backend
+          .generate(
+            prompt,
+            stopSequences: template.stopSequences,
+            imagePaths: generationImagePaths,
+          )
+          .timeout(generationTimeout)
+          .listen(
+        (token) {
+          if (tokenCount == 0) {
+            log.info(_logTag, 'first token received');
+            firstTokenMs = DateTime.now().millisecondsSinceEpoch - genStartMs;
+          }
+          tokenCount++;
+          buffer.write(token);
+          state = AsyncData(
+            state.requireValue.copyWith(streamingText: buffer.toString()),
+          );
+        },
+        onDone: () {
+          log.info(_logTag,
+              'generation ${_stopRequested ? 'stopped' : 'done'}: '
+              '$tokenCount tokens, ${buffer.length} chars');
+          recordIo(_stopRequested ? TraceOutcome.stopped : TraceOutcome.done);
+          final assistantMs = DateTime.now().millisecondsSinceEpoch;
+          final assistantMsg = Message(
+            id: 'msg-$assistantMs',
+            conversationId: conversationId,
+            role: MessageRole.assistant,
+            content: buffer.toString(),
+            createdAtMs: assistantMs,
+          );
+          msgRepo.save(assistantMsg);
+
+          // Update conversation updatedAt
+          final conv = convRepo.getById(conversationId);
+          if (conv != null) {
+            convRepo.save(conv.copyWith(updatedAtMs: assistantMs));
+          }
+
+          state = AsyncData(state.requireValue.copyWith(
+            messages: [...state.requireValue.messages, assistantMsg],
+            clearStreaming: true,
+          ));
+        },
+        onError: (Object e, StackTrace st) {
+          AppLogger.instance
+              .error(_logTag, 'generation error after $tokenCount tokens', e, st);
+          recordIo(
+            e is TimeoutException ? TraceOutcome.timeout : TraceOutcome.error,
+            error: e.toString(),
+          );
+          // A client-side timeout only stops the Dart listener — the native
+          // generation may still be running. Tell it to stop so it doesn't
+          // keep burning CPU/battery, and so the next turn starts clean.
+          if (e is TimeoutException) backend.stop();
+          state = AsyncError(e, st);
+        },
+        cancelOnError: true,
+      );
+    } catch (e, st) {
+      log.error(_logTag, 'send() failed after persist, clearing streaming', e, st);
+      if (state.valueOrNull != null) {
+        state = AsyncData(state.requireValue.copyWith(clearStreaming: true));
+      }
+      // throwWithStackTrace rather than a plain throw so the wrapper's stack
+      // trace still points at where [e] actually originated, not just this
+      // catch block.
+      Error.throwWithStackTrace(SendFailedAfterPersistException(e), st);
+    }
   }
 
   /// Most recent conversation messages to include in the prompt. Older turns
@@ -356,6 +524,8 @@ class ChatNotifier extends _$ChatNotifier {
     String summary, {
     required bool ragEnabled,
     required List<DocumentChunk> ragChunks,
+    String? imageMarker,
+    List<String> imagePaths = const [],
   }) async {
     final log = AppLogger.instance;
     final backend = ref.read(inferenceNotifierProvider).valueOrNull;
@@ -416,13 +586,20 @@ class ChatNotifier extends _$ChatNotifier {
       final startMs = DateTime.now().millisecondsSinceEpoch;
       final buffer = StringBuffer();
       var tokens = 0;
+      // Every agent iteration that carries an image re-runs vision encoding
+      // (no KV-cache reuse across generate() calls — see the plain path's
+      // generationTimeout comment), so it needs the same generous headroom.
+      final iterationTimeout = imagePaths.isNotEmpty
+          ? const Duration(seconds: 300)
+          : const Duration(seconds: 120);
       await for (final token in backend
           .generate(
             prompt,
             stopSequences: template.stopSequences,
             grammar: grammar,
+            imagePaths: imagePaths,
           )
-          .timeout(const Duration(seconds: 120))) {
+          .timeout(iterationTimeout)) {
         buffer.write(token);
         tokens++;
         yield token;
@@ -494,7 +671,8 @@ class ChatNotifier extends _$ChatNotifier {
     );
 
     try {
-      final result = await loop.run(_historyTurns(history));
+      final result =
+          await loop.run(_historyTurns(history, imageMarker: imageMarker));
 
       if (result.stopped && result.answer.isEmpty) {
         if (state.valueOrNull != null) {
@@ -533,6 +711,9 @@ class ChatNotifier extends _$ChatNotifier {
       );
     } catch (e, st) {
       log.error(_logTag, 'agent loop failed', e, st);
+      // See the plain path's onError: a client-side timeout doesn't stop
+      // native generation on its own.
+      if (e is TimeoutException) backend.stop();
       state = AsyncError(e, st);
     }
   }
@@ -567,11 +748,11 @@ class ChatNotifier extends _$ChatNotifier {
 
   /// Map the most recent [history] messages to template turns, dropping older
   /// turns so a long conversation never overflows the context window.
-  List<ChatTurn> _historyTurns(List<Message> history) {
+  List<ChatTurn> _historyTurns(List<Message> history, {String? imageMarker}) {
     final windowed = history.length > _maxHistoryMessages
         ? history.sublist(history.length - _maxHistoryMessages)
         : history;
-    return [for (final m in windowed) ChatTurn(m.role, m.content)];
+    return historyTurnsForPrompt(windowed, imageMarker: imageMarker);
   }
 
   /// Assemble retrieved RAG chunks into a labeled context block, or '' when
