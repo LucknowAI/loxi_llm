@@ -210,13 +210,12 @@ class ChatNotifier extends _$ChatNotifier {
 
     // Everything from here on is post-persist: the message is already sent,
     // so any failure below must reach the caller as
-    // SendFailedAfterPersistException, never a bare rethrow — including
-    // state.requireValue below, which throws if state is currently
-    // AsyncError from a previous turn's failed generation. That throw sat
-    // outside this try in an earlier version of this fix, defeating the
-    // whole point: a send right after a failed one would still look
-    // pre-persist to the caller despite msgRepo.save() above having already
-    // run.
+    // SendFailedAfterPersistException, never a bare rethrow. This try used to
+    // start further down, after building `current` via state.requireValue —
+    // which throws if state is currently AsyncError from a previous turn's
+    // failed generation — so a send right after a failed one would still
+    // look pre-persist to the caller despite msgRepo.save() above having
+    // already run. See priorMessagesFor for how `current` is built now.
     try {
       // Update conversation title if this is the first message
       final conversation = convRepo.getById(conversationId);
