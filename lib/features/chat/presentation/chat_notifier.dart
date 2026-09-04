@@ -107,6 +107,31 @@ List<ChatTurn> historyTurnsForPrompt(
   ];
 }
 
+/// Messages to seed a new turn's [ChatState] with, recovering from
+/// [fetchFromRepo] when [currentMessages] is unusable.
+///
+/// `state.valueOrNull` is null right after a previous turn's generation
+/// failed — [ChatNotifier]'s stream `onError` and the agent loop's catch
+/// both set `state` to a plain `AsyncError` with no previous value attached.
+/// Without this fallback, [ChatNotifier.send] reading `state.requireValue`
+/// would throw that stale error before the new message ever got a chance to
+/// generate a response — and since nothing ever moves `state` back to
+/// `AsyncData` on its own, every later send in the conversation would fail
+/// the exact same way.
+///
+/// [fetchFromRepo] is only called when needed (never on the common
+/// success path) and its result already includes [excludingMessageId] — the
+/// new message, already persisted by the time this runs — filtered back out
+/// here so the caller's own append doesn't duplicate it.
+List<Message> priorMessagesFor({
+  required List<Message>? currentMessages,
+  required List<Message> Function() fetchFromRepo,
+  required String excludingMessageId,
+}) {
+  if (currentMessages != null) return currentMessages;
+  return fetchFromRepo().where((m) => m.id != excludingMessageId).toList();
+}
+
 /// The image paths to pass to [InferenceBackend.generate] for this turn:
 /// the single attached image, but only when the backend actually supports
 /// vision — never sent otherwise, even if one is attached (e.g. a stale
@@ -201,8 +226,17 @@ class ChatNotifier extends _$ChatNotifier {
         ref.invalidate(conversationListNotifierProvider);
       }
 
-      // Update UI with user message + signal streaming start
-      final current = state.requireValue;
+      // Update UI with user message + signal streaming start. See
+      // priorMessagesFor: recovers from the message repo rather than crash
+      // via state.requireValue when a previous turn's generation left state
+      // as an AsyncError with no previous value.
+      final current = ChatState(
+        messages: priorMessagesFor(
+          currentMessages: state.valueOrNull?.messages,
+          fetchFromRepo: () => msgRepo.getMessages(conversationId),
+          excludingMessageId: userMsg.id,
+        ),
+      );
       state = AsyncData(current.copyWith(
         messages: [...current.messages, userMsg],
         streamingText: '',

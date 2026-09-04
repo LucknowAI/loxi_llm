@@ -26,7 +26,14 @@ to re-test specially): the composer wasn't clearing its text field after a visio
 whose post-persist step failed (e.g. `mediaMarker()` throwing) — the same root cause as
 a related bug where a failed post-persist send could restore a stale image attachment.
 Both are fixed via `SendFailedAfterPersistException`/`shouldRestoreComposerAfterSendError`
-(`#59`). If either symptom reappears, it's a real regression.
+(`#59`). A follow-up review of that fix found it only addressed the composer's own
+state — a *second* bug meant the conversation itself stayed wedged after any generation
+failure (see item 6's "Trigger a generation failure..." step): `send()` read
+`state.requireValue` to build the next turn, which rethrew the stale error left by the
+failed one, so no later send in that conversation ever reached generation again. Fixed
+via `priorMessagesFor()`, which recovers the message list from the repository instead of
+crashing when the notifier's own state is unusable. If either symptom reappears, it's a
+real regression.
 
 ## Setup
 
@@ -126,9 +133,13 @@ Both are fixed via `SendFailedAfterPersistException`/`shouldRestoreComposerAfter
       return until the whole turn finishes, but the composer clears optimistically
       right away regardless — it doesn't wait for `send()` to resolve.)
 - [ ] Trigger a generation failure (e.g. force a timeout), then immediately send a
-      second message with an image attached in the same conversation. Confirm the
-      second send's text/attachment still clear normally — a prior failed generation
-      shouldn't make the next send look like it wasn't persisted.
+      second message with an image attached in the same conversation. Confirm: the
+      second send's text/attachment still clear normally, the failed turn's error
+      screen is replaced by the full thread again (not left showing a bare "Error:"
+      text), the new message appears in that thread, and — the part that actually
+      matters — a response **is generated** for it. A prior failed generation must not
+      permanently wedge the conversation so every later send silently never generates
+      anything.
 
 ## 7. Regression: existing (non-multimodal) flows
 

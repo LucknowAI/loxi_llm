@@ -151,6 +151,49 @@ void main() {
     });
   });
 
+  group('priorMessagesFor', () {
+    Message msg(String id) => Message(
+          id: id,
+          conversationId: 'conv-1',
+          role: MessageRole.user,
+          content: id,
+          createdAtMs: 0,
+        );
+
+    test('uses currentMessages as-is when non-null, never calling the repo', () {
+      var repoCalled = false;
+      final result = priorMessagesFor(
+        currentMessages: [msg('m1')],
+        fetchFromRepo: () {
+          repoCalled = true;
+          return [msg('m1'), msg('m2')];
+        },
+        excludingMessageId: 'm2',
+      );
+      expect(result.map((m) => m.id), ['m1']);
+      expect(repoCalled, isFalse);
+    });
+
+    test('falls back to the repo when currentMessages is null, excluding '
+        'the given message id', () {
+      final result = priorMessagesFor(
+        currentMessages: null,
+        fetchFromRepo: () => [msg('m1'), msg('m2'), msg('m3')],
+        excludingMessageId: 'm3',
+      );
+      expect(result.map((m) => m.id), ['m1', 'm2']);
+    });
+
+    test('repo fallback with nothing to exclude returns the full repo list', () {
+      final result = priorMessagesFor(
+        currentMessages: null,
+        fetchFromRepo: () => [msg('m1')],
+        excludingMessageId: 'nonexistent',
+      );
+      expect(result.map((m) => m.id), ['m1']);
+    });
+  });
+
   group('imagePathsForGeneration', () {
     test('empty when there is no attached image', () {
       expect(
