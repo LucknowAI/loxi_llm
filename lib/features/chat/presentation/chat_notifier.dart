@@ -54,6 +54,27 @@ class ChatState {
 bool shouldSendMessage(String text, String? imagePath) =>
     text.trim().isNotEmpty || imagePath != null;
 
+/// Thrown by [ChatNotifier.send] when it fails *after* the user message was
+/// already persisted (e.g. `mediaMarker()` or agent-turn setup throwing) —
+/// as opposed to a pre-persist failure (no model loaded, attached image
+/// missing) where nothing was sent yet.
+///
+/// Distinct from a plain rethrow so callers (the composer) can tell the two
+/// apart: on this exception the message did go through, so the composer
+/// should clear its input the same as on success, not restore stale
+/// text/attachment state for a retry — there's nothing left to retry.
+class SendFailedAfterPersistException implements Exception {
+  const SendFailedAfterPersistException(this.cause);
+
+  /// The original exception that triggered this (e.g. a PlatformException
+  /// from a failed native call, or an agent-setup error). Preserved for
+  /// display — [toString] shows it directly rather than double-wrapping.
+  final Object cause;
+
+  @override
+  String toString() => cause.toString();
+}
+
 /// Conversation title derived from a first message's text: 'Image' for an
 /// image-only send (no text), otherwise the text, truncated past 50 chars.
 String firstMessageTitle(String text) {
@@ -84,6 +105,31 @@ List<ChatTurn> historyTurnsForPrompt(
             : windowedHistory[i].content,
       ),
   ];
+}
+
+/// Messages to seed a new turn's [ChatState] with, recovering from
+/// [fetchFromRepo] when [currentMessages] is unusable.
+///
+/// `state.valueOrNull` is null right after a previous turn's generation
+/// failed — [ChatNotifier]'s stream `onError` and the agent loop's catch
+/// both set `state` to a plain `AsyncError` with no previous value attached.
+/// Without this fallback, [ChatNotifier.send] reading `state.requireValue`
+/// would throw that stale error before the new message ever got a chance to
+/// generate a response — and since nothing ever moves `state` back to
+/// `AsyncData` on its own, every later send in the conversation would fail
+/// the exact same way.
+///
+/// [fetchFromRepo] is only called when needed (never on the common
+/// success path) and its result already includes [excludingMessageId] — the
+/// new message, already persisted by the time this runs — filtered back out
+/// here so the caller's own append doesn't duplicate it.
+List<Message> priorMessagesFor({
+  required List<Message>? currentMessages,
+  required List<Message> Function() fetchFromRepo,
+  required String excludingMessageId,
+}) {
+  if (currentMessages != null) return currentMessages;
+  return fetchFromRepo().where((m) => m.id != excludingMessageId).toList();
 }
 
 /// The image paths to pass to [InferenceBackend.generate] for this turn:
@@ -162,27 +208,39 @@ class ChatNotifier extends _$ChatNotifier {
     );
     msgRepo.save(userMsg);
 
-    // Update conversation title if this is the first message
-    final conversation = convRepo.getById(conversationId);
-    if (conversation != null && conversation.title == 'New conversation') {
-      final title = firstMessageTitle(userText);
-      convRepo.save(conversation.copyWith(title: title, updatedAtMs: now));
-      ref.invalidate(conversationListNotifierProvider);
-    }
-
-    // Update UI with user message + signal streaming start
-    final current = state.requireValue;
-    state = AsyncData(current.copyWith(
-      messages: [...current.messages, userMsg],
-      streamingText: '',
-    ));
-
-    // Anything after streamingText is set must clear it on failure — otherwise
-    // isStreaming stays true, Stop does nothing useful (no native stream yet),
-    // and the composer refuses new sends. Stream listen errors are handled by
-    // onError below; this covers awaits that throw before a subscription exists
-    // (_ensureSummary, mediaMarker, RAG retrieve, agent setup).
+    // Everything from here on is post-persist: the message is already sent,
+    // so any failure below must reach the caller as
+    // SendFailedAfterPersistException, never a bare rethrow. This try used to
+    // start further down, after building `current` via state.requireValue —
+    // which throws if state is currently AsyncError from a previous turn's
+    // failed generation — so a send right after a failed one would still
+    // look pre-persist to the caller despite msgRepo.save() above having
+    // already run. See priorMessagesFor for how `current` is built now.
     try {
+      // Update conversation title if this is the first message
+      final conversation = convRepo.getById(conversationId);
+      if (conversation != null && conversation.title == 'New conversation') {
+        final title = firstMessageTitle(userText);
+        convRepo.save(conversation.copyWith(title: title, updatedAtMs: now));
+        ref.invalidate(conversationListNotifierProvider);
+      }
+
+      // Update UI with user message + signal streaming start. See
+      // priorMessagesFor: recovers from the message repo rather than crash
+      // via state.requireValue when a previous turn's generation left state
+      // as an AsyncError with no previous value.
+      final current = ChatState(
+        messages: priorMessagesFor(
+          currentMessages: state.valueOrNull?.messages,
+          fetchFromRepo: () => msgRepo.getMessages(conversationId),
+          excludingMessageId: userMsg.id,
+        ),
+      );
+      state = AsyncData(current.copyWith(
+        messages: [...current.messages, userMsg],
+        streamingText: '',
+      ));
+
       // Resolve the running model + template once — used by summarization and by
       // both the agent and streaming paths. The loaded model is authoritative
       // (the persisted ModelStatus.loaded flag is reset on startup, and
@@ -377,7 +435,10 @@ class ChatNotifier extends _$ChatNotifier {
       if (state.valueOrNull != null) {
         state = AsyncData(state.requireValue.copyWith(clearStreaming: true));
       }
-      rethrow;
+      // throwWithStackTrace rather than a plain throw so the wrapper's stack
+      // trace still points at where [e] actually originated, not just this
+      // catch block.
+      Error.throwWithStackTrace(SendFailedAfterPersistException(e), st);
     }
   }
 
