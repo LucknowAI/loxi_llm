@@ -112,9 +112,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     // file, so dispose()/the vision-gate below must no longer touch it —
     // otherwise a slow send() (RAG retrieval, summarization) leaves a window
     // where navigating away or switching models deletes a file the
-    // already-persisted message still points to. On a pre-persist throw,
-    // restore only when the file still exists (see
-    // [attachedPathToRestoreAfterSendError]).
+    // already-persisted message still points to. send() distinguishes a
+    // pre-persist throw (nothing sent — leave the typed text as-is for a
+    // retry, and restore the attachment, but only when the file still
+    // exists, see [attachedPathToRestoreAfterSendError]) from a
+    // post-persist one ([SendFailedAfterPersistException] — the message
+    // went through, so the composer clears exactly as it would on success).
     setState(() => _attachedImagePath = null);
     try {
       await ref
@@ -122,6 +125,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           .send(text, imagePath: imagePath);
       _textController.clear();
       _scrollToBottom();
+    } on SendFailedAfterPersistException catch (e) {
+      // The message was already persisted and is showing in the chat above
+      // — clear the composer the same as on success (there's nothing left
+      // to retry), just surface that generation itself failed.
+      _textController.clear();
+      _scrollToBottom();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
     } catch (e) {
       final restore = await attachedPathToRestoreAfterSendError(imagePath);
       if (!mounted) return;

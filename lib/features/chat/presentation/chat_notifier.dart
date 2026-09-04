@@ -54,6 +54,27 @@ class ChatState {
 bool shouldSendMessage(String text, String? imagePath) =>
     text.trim().isNotEmpty || imagePath != null;
 
+/// Thrown by [ChatNotifier.send] when it fails *after* the user message was
+/// already persisted (e.g. `mediaMarker()` or agent-turn setup throwing) —
+/// as opposed to a pre-persist failure (no model loaded, attached image
+/// missing) where nothing was sent yet.
+///
+/// Distinct from a plain rethrow so callers (the composer) can tell the two
+/// apart: on this exception the message did go through, so the composer
+/// should clear its input the same as on success, not restore stale
+/// text/attachment state for a retry — there's nothing left to retry.
+class SendFailedAfterPersistException implements Exception {
+  const SendFailedAfterPersistException(this.cause);
+
+  /// The original exception that triggered this (e.g. a PlatformException
+  /// from a failed native call, or an agent-setup error). Preserved for
+  /// display — [toString] shows it directly rather than double-wrapping.
+  final Object cause;
+
+  @override
+  String toString() => cause.toString();
+}
+
 /// Conversation title derived from a first message's text: 'Image' for an
 /// image-only send (no text), otherwise the text, truncated past 50 chars.
 String firstMessageTitle(String text) {
@@ -377,7 +398,7 @@ class ChatNotifier extends _$ChatNotifier {
       if (state.valueOrNull != null) {
         state = AsyncData(state.requireValue.copyWith(clearStreaming: true));
       }
-      rethrow;
+      throw SendFailedAfterPersistException(e);
     }
   }
 

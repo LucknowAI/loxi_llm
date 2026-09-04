@@ -208,6 +208,15 @@ void main() {
     });
   });
 
+  group('SendFailedAfterPersistException', () {
+    test('toString shows the underlying cause directly, not double-wrapped', () {
+      final exception = SendFailedAfterPersistException(
+        StateError('mediaMarker failed'),
+      );
+      expect(exception.toString(), 'Bad state: mediaMarker failed');
+    });
+  });
+
   group('ChatState', () {
     test('isStreaming is false when streamingText is null', () {
       const state = ChatState(messages: []);
