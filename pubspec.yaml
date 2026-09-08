@@ -87,6 +87,9 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^4.0.0
 
+  # Fakes FileStorageService's use of path_provider in download_service_test.dart
+  path_provider_platform_interface: ^2.1.2
+
   # Code generation
   build_runner: ^2.4.9
   riverpod_generator: ^2.4.3

@@ -26,7 +26,10 @@ double combinedDownloadProgress({
 ///
 /// Supports progress callbacks, cancellation, and resume via
 /// HTTP Range + FileAccessMode.append (requires server 206 support;
-/// HuggingFace CDN supports it).
+/// HuggingFace CDN supports it). A leg whose on-disk file already meets its
+/// expected size is skipped entirely rather than resumed, since a past-EOF
+/// Range request (e.g. retrying a download whose other leg failed) gets
+/// rejected by the server with 416 Range Not Satisfiable.
 class DownloadService {
   DownloadService(this._dio, this._storage);
 
@@ -79,6 +82,7 @@ class DownloadService {
         url: downloadUrl,
         cancelToken: cancelToken,
         hfToken: hfToken,
+        expectedSizeBytes: baseSizeBytes,
         onProgress: (progress, bytesPerSecond) {
           baseFraction = progress;
           reportCombined(bytesPerSecond);
@@ -92,6 +96,7 @@ class DownloadService {
           url: mmprojDownloadUrl,
           cancelToken: cancelToken,
           hfToken: hfToken,
+          expectedSizeBytes: mmprojSizeBytes,
           onProgress: (progress, bytesPerSecond) {
             mmprojFraction = progress;
             reportCombined(bytesPerSecond);
@@ -113,11 +118,21 @@ class DownloadService {
     required String url,
     required CancelToken cancelToken,
     required void Function(double progress, double bytesPerSecond) onProgress,
+    required int expectedSizeBytes,
     String? hfToken,
   }) async {
     final savePath = await _storage.getModelPath(filename);
     final file = File(savePath);
     final existingBytes = file.existsSync() ? file.lengthSync() : 0;
+
+    // Already fully on disk (>= not ==, so a stale/shrunk catalog size or a
+    // marginally larger file doesn't re-trigger the request this guards
+    // against): skip the network call entirely rather than resuming, since a
+    // Range request past EOF gets rejected by the server with 416.
+    if (expectedSizeBytes > 0 && existingBytes >= expectedSizeBytes) {
+      onProgress(1.0, 0.0);
+      return savePath;
+    }
 
     // Speed is sampled over ~500ms windows and exponentially smoothed so the
     // displayed value is steady rather than jumping on every progress event.
