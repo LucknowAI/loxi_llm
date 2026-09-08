@@ -29,7 +29,8 @@ class Model with _$Model {
 
   bool get isDownloaded => status == ModelStatus.downloaded;
   bool get isDownloading => status == ModelStatus.downloading;
-  bool get canLoad => status == ModelStatus.downloaded && localPath != null;
+  bool get canLoad => localPath != null &&
+      (status == ModelStatus.downloaded || status == ModelStatus.error);
 
   String? get recommendationBadge => switch (id) {
         'gemma3-270m-it' => 'Fastest',
