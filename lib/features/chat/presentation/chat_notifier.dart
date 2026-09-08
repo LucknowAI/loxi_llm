@@ -415,7 +415,7 @@ class ChatNotifier extends _$ChatNotifier {
             clearStreaming: true,
           ));
         },
-        onError: (Object e, StackTrace st) {
+        onError: (Object e, StackTrace st) async {
           AppLogger.instance
               .error(_logTag, 'generation error after $tokenCount tokens', e, st);
           recordIo(
@@ -425,7 +425,17 @@ class ChatNotifier extends _$ChatNotifier {
           // A client-side timeout only stops the Dart listener — the native
           // generation may still be running. Tell it to stop so it doesn't
           // keep burning CPU/battery, and so the next turn starts clean.
-          if (e is TimeoutException) backend.stop();
+          // Awaited (rather than fire-and-forget) so `isStreaming` only turns
+          // false, letting a retry through, once the native stop has actually
+          // landed — otherwise a fast retry can race its own generate() call.
+          if (e is TimeoutException) {
+            try {
+              await backend.stop();
+            } catch (stopError, stopSt) {
+              AppLogger.instance.error(
+                  _logTag, 'backend.stop() after timeout failed', stopError, stopSt);
+            }
+          }
           state = AsyncError(e, st);
         },
         cancelOnError: true,
