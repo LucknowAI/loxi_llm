@@ -12,13 +12,17 @@ class SettingsNotifier extends _$SettingsNotifier {
   static const _keyChunkSize = 'settings_chunk_size';
   static const _keyTopK = 'settings_top_k';
   static const _keyModelIoLogging = 'settings_model_io_logging';
-  static const _keyEnabledTools = 'settings_enabled_tools';
+  // Persists which tools the user turned OFF (opt-out), not which are on, so
+  // a tool added to the catalog after a user's last save defaults to enabled
+  // instead of silently disappearing (#67).
+  static const _keyDisabledTools = 'settings_disabled_tools';
 
   Set<String> _loadEnabledTools(SharedPreferences prefs) {
-    final raw = prefs.getString(_keyEnabledTools);
-    if (raw == null || raw.isEmpty) return defaultEnabledToolNames();
-    final names = raw.split(',').where((s) => s.isNotEmpty).toSet();
-    return names.isEmpty ? defaultEnabledToolNames() : names;
+    final raw = prefs.getString(_keyDisabledTools);
+    final disabled = raw == null || raw.isEmpty
+        ? const <String>{}
+        : raw.split(',').where((s) => s.isNotEmpty).toSet();
+    return defaultEnabledToolNames().difference(disabled);
   }
 
   @override
@@ -53,13 +57,15 @@ class SettingsNotifier extends _$SettingsNotifier {
 
   void setToolEnabled(String toolName, bool enabled) {
     final prefs = ref.read(sharedPreferencesProvider);
-    final current = {...state.enabledToolNames};
+    final disabled = defaultEnabledToolNames().difference(
+      state.enabledToolNames,
+    );
     if (enabled) {
-      current.add(toolName);
+      disabled.remove(toolName);
     } else {
-      current.remove(toolName);
+      disabled.add(toolName);
     }
-    prefs.setString(_keyEnabledTools, current.join(','));
+    prefs.setString(_keyDisabledTools, disabled.join(','));
     ref.invalidateSelf();
   }
 }
