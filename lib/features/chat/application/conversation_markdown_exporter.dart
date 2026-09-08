@@ -34,7 +34,13 @@ String exportConversationMarkdown({
     final label = msg.role == MessageRole.user ? 'User' : 'Assistant';
     buffer
       ..writeln('**$label** · ${_formatTimestamp(msg.createdAtMs)}')
-      ..writeln()
+      ..writeln();
+    if (msg.imagePath != null) {
+      buffer
+        ..writeln('_[image attached]_')
+        ..writeln();
+    }
+    buffer
       ..writeln(msg.content.trim())
       ..writeln();
   }

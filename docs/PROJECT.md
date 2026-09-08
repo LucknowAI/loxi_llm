@@ -253,6 +253,10 @@ erDiagram
         string huggingFaceRepo
         string filename
         string format
+        string mmprojFilename
+        string mmprojHuggingFaceRepo
+        string mmprojLocalPath
+        int mmprojSizeBytes
     }
 
     CONVERSATION {
@@ -270,6 +274,7 @@ erDiagram
         string role
         string content
         int createdAtMs
+        string imagePath
     }
 
     DOCUMENT {
@@ -331,6 +336,22 @@ flowchart LR
     TASK -- yes --> MEDIA
     TASK -- no --> LLAMA
 ```
+
+### Multimodal (Gemma 4 vision)
+
+On-device image-grounded chat, shipping in v1.2.0 for Gemma 4 E2B/E4B (epic `#18`; Bonsai 27B, `#23`, deferred to v1.3.0).
+
+**Domain & capability detection.** `Model.mmprojFilename`, `mmprojHuggingFaceRepo`, `mmprojLocalPath`, and `mmprojSizeBytes`, plus `Message.imagePath`, support attaching an image to a chat message and loading a companion mmproj vision projector alongside a base GGUF model. `isMultimodalModel()` (`lib/features/models/domain/model.dart`) is the single capability signal — whether `mmprojFilename` is set, no separate boolean. That's a *catalog* signal only; the *native-verified* signal is `InferenceBackend.supportsVision`, populated from a native capability check (`mtmd_support_vision`) and cached at load time. UI gating (image-attach button, loading-overlay lockout) checks both layers — catalog says the model *should* support vision, `supportsVision` confirms the loaded mmproj actually reported it.
+
+**Catalog & download.** `kCuratedModels` (`lib/features/models/data/model_catalog.dart`) has `gemma4-e2b-it` and `gemma4-e4b-it`, each with an F16 mmproj companion from `unsloth/gemma-4-{E2B,E4B}-it-GGUF`. `ModelsNotifier.build()` upserts any catalog entries missing from the DB on every load (not just first launch), so existing installs pick up new entries without a reinstall. `DownloadService.downloadModel` sequentially downloads the mmproj file when present, reporting combined progress as a size-weighted average of the two downloads.
+
+**Loading & RAM guard.** `InferenceNotifier.loadModel` passes `mmprojPath: model.mmprojLocalPath` to `backend.loadModel` — the missing link that lets `supportsVision` ever become `true`. `RamCheckService.confirmLoad` takes the whole `Model` and its warning dialog breaks out the vision component's RAM contribution separately from the base model for vision models, and skips the text-only "use Gemma 3 270M" fallback recommendation (irrelevant to someone deliberately loading a vision model). A load failure for a large model (same `isLargeModel` threshold the dialog uses) gets a friendlier "not enough free memory" hint instead of the raw native exception. The Models screen shows a full-screen loading overlay (animation + the loading model's name) that blocks the rest of the screen — other rows, Settings, Sideload — while any model loads; `ModelsNotifier.loadModel` also guards against a second concurrent load starting (the UI lockout alone isn't a hard guarantee against a fast double-tap or an accessibility tool).
+
+**Native engine.** The `llama_engine` plugin wires llama.cpp's vendored `mtmd` toolkit into its JNI bridge: `nativeInitModel` loads the mmproj alongside the base model, `nativeGenerateStreamInit` builds bitmaps from attached image paths and primes the KV cache via `mtmd_helper_eval_chunks` before decoding begins. This runs **CPU-only** (Vulkan/OpenCL/AMX disabled in `CMakeLists.txt` for cross-compile portability) — vision encoding for one image took ~186s on a mid-range test device before the first token, well past the app's original 60s chat timeout (bumped to 300s specifically when an image is attached). Speeding this up (`#57`, e.g. enabling Vulkan, or reusing the KV cache across agent-loop iterations instead of re-encoding the image every iteration) and making `Stop`/timeout actually interrupt an in-flight encode (`#58`, no cancellation hook exists in `mtmd`'s eval path today) are both tracked as follow-ups, not yet done.
+
+**Chat UI & prompt assembly.** `ConversationScreen` lets the user attach an image via the composer (gated on `isMultimodalModel(loadedModel) && backend.supportsVision`): picks via `file_picker` (`FileType.image`), copies into `<app-documents>/images/`, shows a removable thumbnail. `ChatNotifier.send()` persists `imagePath` on the user `Message` and, when the loaded backend supports vision, fetches the native marker string (`mediaMarker()`, backed by `mtmd_default_marker()`) and embeds it into *only the current turn's* content (`historyTurnsForPrompt` — never an earlier turn, since `generate()`'s `imagePaths` only ever re-supplies the current image per call) before passing `imagePaths` through to `generate()`. This runs identically through the plain-chat and agent-loop paths — no capability gating on RAG or tool-calling for a multimodal turn, though an agent turn re-runs vision encoding on every iteration (no KV-cache reuse yet, compounding the CPU-only latency cost above). A pre-send check verifies the attached file still exists (it can vanish between attach and send) before anything is persisted, mirroring the existing no-model-loaded guard's "don't send" contract. `send()` throws a distinct `SendFailedAfterPersistException` for anything that fails *after* the message was already persisted (e.g. `mediaMarker()` or agent-turn setup), so the composer (`shouldRestoreComposerAfterSendError`) can tell that apart from a pre-persist failure — clearing its input either way like a normal send, rather than restoring stale text/attachment for a message that already went through (`#59`, fixed). That fix alone left a second, more severe bug: after any generation failure, `ChatNotifier`'s own state became an `AsyncError` with no previous value, so the *next* `send()` — which built the new turn off `state.requireValue` — rethrew the stale error before ever reaching generation, permanently wedging the conversation. `send()` now derives the prior message list via `priorMessagesFor()`, which falls back to a fresh read from `MessageRepository` (excluding the just-persisted message, to avoid double-counting it) whenever the notifier's own state has no usable value, so a send right after a failed one still reaches generation (`#59`, fully fixed).
+
+Manual device verification checklist: [`docs/multimodal-device-qa.md`](multimodal-device-qa.md).
 
 ---
 
@@ -493,13 +514,20 @@ graph TD
 | `widget_test.dart` | App smoke test — renders without crash | Stubs ObjectBox + prefs |
 | `engine_test.dart` | `InferenceBackend` abstract contract; `backendForModel()` routing | Pure Dart — no native plugins needed |
 | `domain_test.dart` | `Model`, `Message`, `Conversation` freezed constructors, computed getters, `copyWith` | Pure Dart |
-| `chat_test.dart` | `_buildPrompt` output, streaming state transitions, auto-title logic | Mocks inference backend |
+| `model_test.dart` | `Model` multimodal fields (`mmprojFilename` etc.), `isMultimodalModel()`, `toJson`/`fromJson` round-trip (vision and text-only) | Pure Dart |
+| `message_test.dart` | `Message.imagePath` field, default/round-trip/`copyWith` behavior, `toJson`/`fromJson` round-trip (with and without an attachment) | Pure Dart |
+| `message_bubble_test.dart` | `MessageBubble` renders an attached image when `imagePath` is set, renders none when null | Widget test with a real temp-file PNG |
+| `chat_test.dart` | `_buildPrompt` output, streaming state transitions, auto-title logic, `shouldSendMessage`/`firstMessageTitle` (image-only send gating and title fallback), `historyTurnsForPrompt`/`imagePathsForGeneration` (image marker applied only to the current turn, `imagePaths` gated on `supportsVision`) | Mocks inference backend. **Gap:** `ChatNotifier.send()`'s actual `generate()` call sites aren't exercised end-to-end (would need a real ObjectBox store — see `models_notifier_test.dart` note) |
+| `ram_check_service_test.dart` | `isLargeModel`/`ramWarningMessage` combined-size threshold math, vision vs. text-only dialog wording, vision model with unknown mmproj size | Pure Dart |
+| `models_notifier_test.dart` | `loadingModelOf`, `shouldReconcileStaleModels`/`staleModelsToReconcile` (cold-start reconciliation runs once, not on every rebuild), `ModelAlreadyLoadingException` | Pure Dart. A real ObjectBox-backed test was attempted first but this environment lacks the native lib `flutter test` needs (`Failed to load dynamic library 'libobjectbox.dylib'` — a separate install step, not yet done here or verified in CI) |
+| `conversation_screen_test.dart` | `stillAllowsAttachment` (image-attachment survives a transient `AsyncLoading` model-switch tick, dropped once settled on a non-vision result), `attachedPathToRestoreAfterSendError` (only restores when the file still exists) | Pure Dart |
 | `embedding_test.dart` | `EmbeddingService` init, `embedQuery` vs `embedPassage` prefix, cosine similarity | Requires ONNX asset in test runner |
 | `rag_test.dart` | Full document ingestion pipeline, `findSimilar` returns top-k nearest chunks | Uses ObjectBox in-memory config |
 | `download_test.dart` | `DownloadService` progress callbacks, cancel token, file write | Mocks Dio |
 | `settings_test.dart` | `SettingsNotifier` defaults, `setChunkSize`, `setTopK` persist correctly | Mocks SharedPreferences |
 | `onboarding_test.dart` | `onboarding_complete` flag read on cold start, written after `_finish()` | Mocks SharedPreferences |
 | `polish_test.dart` | `recommendationBadge` values, RAM guard dialog threshold | Widget test for dialog |
+| `local_packages/llama_engine/test/llama_engine_test.dart` | `LlamaConfig`/`GenerationParams` `toMap()` serialization for multimodal fields | Separate package — run via `cd local_packages/llama_engine && flutter test` |
 
 **Run all tests:**
 ```bash

@@ -61,6 +61,7 @@ dependencies:
   # Model download and storage
   dio: ^5.9.2
   file_picker: ^8.1.0
+  path: ^1.9.0
   path_provider: ^2.1.5
   system_info_plus: ^0.0.6
 
@@ -85,6 +86,9 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^4.0.0
+
+  # Fakes FileStorageService's use of path_provider in download_service_test.dart
+  path_provider_platform_interface: ^2.1.2
 
   # Code generation
   build_runner: ^2.4.9

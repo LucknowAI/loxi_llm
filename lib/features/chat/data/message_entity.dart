@@ -21,5 +21,8 @@ class MessageEntity {
   @Property()
   int createdAtMs = 0;
 
+  @Property()
+  String? imagePath;
+
   MessageEntity();
 }

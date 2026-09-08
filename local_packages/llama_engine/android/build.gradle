@@ -51,6 +51,13 @@ android {
                 arguments '-DANDROID_STL=c++_shared',
                           '-DANDROID_PLATFORM=android-24',
                           '-DCMAKE_BUILD_TYPE=Release'
+                // tools/mtmd/CMakeLists.txt also defines several CLI/debug
+                // executables we don't want (llama-mtmd-cli, llama-mtmd-debug,
+                // llama-llava-cli, etc.) — some need common/arg.h, which we
+                // don't build. Restrict Gradle to only what we actually ship;
+                // llama_engine_jni's own link deps (llama, mtmd) still build
+                // as transitive targets.
+                targets 'llama_engine_jni'
             }
         }
     }

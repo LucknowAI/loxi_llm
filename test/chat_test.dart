@@ -1,10 +1,45 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:loki_llm/core/engine/chat_template.dart';
 import 'package:loki_llm/features/chat/domain/conversation.dart';
 import 'package:loki_llm/features/chat/domain/message.dart';
 import 'package:loki_llm/features/chat/domain/message_role.dart';
 import 'package:loki_llm/features/chat/presentation/chat_notifier.dart';
 
 void main() {
+  group('shouldSendMessage', () {
+    test('true for non-empty text with no image', () {
+      expect(shouldSendMessage('hello', null), isTrue);
+    });
+
+    test('true for an image with empty text (image-only send)', () {
+      expect(shouldSendMessage('', '/tmp/img.jpg'), isTrue);
+      expect(shouldSendMessage('   ', '/tmp/img.jpg'), isTrue);
+    });
+
+    test('false for empty text and no image', () {
+      expect(shouldSendMessage('', null), isFalse);
+      expect(shouldSendMessage('   ', null), isFalse);
+    });
+  });
+
+  group('firstMessageTitle', () {
+    test('falls back to Image for empty (image-only) text', () {
+      expect(firstMessageTitle(''), 'Image');
+      expect(firstMessageTitle('   '), 'Image');
+    });
+
+    test('uses the trimmed text when short', () {
+      expect(firstMessageTitle('  Hello there  '), 'Hello there');
+    });
+
+    test('truncates text past 50 characters with an ellipsis', () {
+      final long = 'x' * 60;
+      final title = firstMessageTitle(long);
+      expect(title, endsWith('...'));
+      expect(title.length, 50);
+    });
+  });
+
   group('MessageRole', () {
     test('user role name is user', () {
       expect(MessageRole.user.name, equals('user'));
@@ -58,6 +93,130 @@ void main() {
     });
   });
 
+  group('historyTurnsForPrompt', () {
+    Message msg(String content, {String? imagePath}) => Message(
+          id: 'msg-${content.hashCode}',
+          conversationId: 'conv-1',
+          role: MessageRole.user,
+          content: content,
+          createdAtMs: 0,
+          imagePath: imagePath,
+        );
+
+    // ChatTurn has no ==; compare via a (role, content) tuple instead.
+    List<(MessageRole, String)> contents(List<ChatTurn> turns) =>
+        turns.map((t) => (t.role, t.content)).toList();
+
+    test('no marker when imageMarker is null, even with an attached image', () {
+      final turns = historyTurnsForPrompt(
+        [msg('describe this', imagePath: '/tmp/a.jpg')],
+      );
+      expect(contents(turns), [(MessageRole.user, 'describe this')]);
+    });
+
+    test('prepends the marker to the last turn when it has an image', () {
+      final turns = historyTurnsForPrompt(
+        [msg('describe this', imagePath: '/tmp/a.jpg')],
+        imageMarker: '<marker>',
+      );
+      expect(contents(turns), [(MessageRole.user, '<marker>\ndescribe this')]);
+    });
+
+    test('does not mark the last turn if it has no image, even with an earlier image turn', () {
+      final turns = historyTurnsForPrompt(
+        [
+          msg('describe this', imagePath: '/tmp/a.jpg'),
+          msg('and now this follow-up, no image'),
+        ],
+        imageMarker: '<marker>',
+      );
+      expect(contents(turns), [
+        (MessageRole.user, 'describe this'),
+        (MessageRole.user, 'and now this follow-up, no image'),
+      ]);
+    });
+
+    test('only the last turn is ever marked, never an earlier one with an image', () {
+      final turns = historyTurnsForPrompt(
+        [
+          msg('first image', imagePath: '/tmp/a.jpg'),
+          msg('second image', imagePath: '/tmp/b.jpg'),
+        ],
+        imageMarker: '<marker>',
+      );
+      expect(contents(turns), [
+        (MessageRole.user, 'first image'),
+        (MessageRole.user, '<marker>\nsecond image'),
+      ]);
+    });
+  });
+
+  group('priorMessagesFor', () {
+    Message msg(String id) => Message(
+          id: id,
+          conversationId: 'conv-1',
+          role: MessageRole.user,
+          content: id,
+          createdAtMs: 0,
+        );
+
+    test('uses currentMessages as-is when non-null, never calling the repo', () {
+      var repoCalled = false;
+      final result = priorMessagesFor(
+        currentMessages: [msg('m1')],
+        fetchFromRepo: () {
+          repoCalled = true;
+          return [msg('m1'), msg('m2')];
+        },
+        excludingMessageId: 'm2',
+      );
+      expect(result.map((m) => m.id), ['m1']);
+      expect(repoCalled, isFalse);
+    });
+
+    test('falls back to the repo when currentMessages is null, excluding '
+        'the given message id', () {
+      final result = priorMessagesFor(
+        currentMessages: null,
+        fetchFromRepo: () => [msg('m1'), msg('m2'), msg('m3')],
+        excludingMessageId: 'm3',
+      );
+      expect(result.map((m) => m.id), ['m1', 'm2']);
+    });
+
+    test('repo fallback with nothing to exclude returns the full repo list', () {
+      final result = priorMessagesFor(
+        currentMessages: null,
+        fetchFromRepo: () => [msg('m1')],
+        excludingMessageId: 'nonexistent',
+      );
+      expect(result.map((m) => m.id), ['m1']);
+    });
+  });
+
+  group('imagePathsForGeneration', () {
+    test('empty when there is no attached image', () {
+      expect(
+        imagePathsForGeneration(imagePath: null, supportsVision: true),
+        isEmpty,
+      );
+    });
+
+    test('empty when the backend does not support vision, even with an image', () {
+      expect(
+        imagePathsForGeneration(imagePath: '/tmp/a.jpg', supportsVision: false),
+        isEmpty,
+      );
+    });
+
+    test('contains the single attached image when vision is supported', () {
+      expect(
+        imagePathsForGeneration(imagePath: '/tmp/a.jpg', supportsVision: true),
+        ['/tmp/a.jpg'],
+      );
+    });
+  });
+
   group('Conversation domain', () {
     test('default systemPrompt is empty string', () {
       const conv = Conversation(
@@ -89,6 +248,15 @@ void main() {
       final updated = conv.copyWith(title: 'New title');
       expect(updated.title, equals('New title'));
       expect(updated.id, equals('conv-1')); // unchanged
+    });
+  });
+
+  group('SendFailedAfterPersistException', () {
+    test('toString shows the underlying cause directly, not double-wrapped', () {
+      final exception = SendFailedAfterPersistException(
+        StateError('mediaMarker failed'),
+      );
+      expect(exception.toString(), 'Bad state: mediaMarker failed');
     });
   });
 

@@ -26,7 +26,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(1, 1939217860881988310),
     name: 'ModelEntity',
-    lastPropertyId: const obx_int.IdUid(11, 2156050348572104246),
+    lastPropertyId: const obx_int.IdUid(15, 6680436700298544288),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -93,6 +93,30 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(11, 2156050348572104246),
         name: 'format',
         type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(12, 4426398186552256417),
+        name: 'mmprojFilename',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(13, 5046037330233970023),
+        name: 'mmprojHuggingFaceRepo',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(14, 559502300986289779),
+        name: 'mmprojLocalPath',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(15, 6680436700298544288),
+        name: 'mmprojSizeBytes',
+        type: 6,
         flags: 0,
       ),
     ],
@@ -178,7 +202,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(3, 1451929269734712640),
     name: 'MessageEntity',
-    lastPropertyId: const obx_int.IdUid(6, 2611781906065260571),
+    lastPropertyId: const obx_int.IdUid(7, 4538193868689740854),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -216,6 +240,12 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(6, 2611781906065260571),
         name: 'createdAtMs',
         type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(7, 4538193868689740854),
+        name: 'imagePath',
+        type: 9,
         flags: 0,
       ),
     ],
@@ -399,7 +429,16 @@ obx_int.ModelDefinition getObjectBoxModel() {
             ? null
             : fbb.writeString(object.filename!);
         final formatOffset = fbb.writeString(object.format);
-        fbb.startTable(12);
+        final mmprojFilenameOffset = object.mmprojFilename == null
+            ? null
+            : fbb.writeString(object.mmprojFilename!);
+        final mmprojHuggingFaceRepoOffset = object.mmprojHuggingFaceRepo == null
+            ? null
+            : fbb.writeString(object.mmprojHuggingFaceRepo!);
+        final mmprojLocalPathOffset = object.mmprojLocalPath == null
+            ? null
+            : fbb.writeString(object.mmprojLocalPath!);
+        fbb.startTable(16);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, modelIdOffset);
         fbb.addOffset(2, nameOffset);
@@ -411,6 +450,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addOffset(8, huggingFaceRepoOffset);
         fbb.addOffset(9, filenameOffset);
         fbb.addOffset(10, formatOffset);
+        fbb.addOffset(11, mmprojFilenameOffset);
+        fbb.addOffset(12, mmprojHuggingFaceRepoOffset);
+        fbb.addOffset(13, mmprojLocalPathOffset);
+        fbb.addInt64(14, object.mmprojSizeBytes);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -458,7 +501,21 @@ obx_int.ModelDefinition getObjectBoxModel() {
           ).vTableGetNullable(buffer, rootOffset, 22)
           ..format = const fb.StringReader(
             asciiOptimization: true,
-          ).vTableGet(buffer, rootOffset, 24, '');
+          ).vTableGet(buffer, rootOffset, 24, '')
+          ..mmprojFilename = const fb.StringReader(
+            asciiOptimization: true,
+          ).vTableGetNullable(buffer, rootOffset, 26)
+          ..mmprojHuggingFaceRepo = const fb.StringReader(
+            asciiOptimization: true,
+          ).vTableGetNullable(buffer, rootOffset, 28)
+          ..mmprojLocalPath = const fb.StringReader(
+            asciiOptimization: true,
+          ).vTableGetNullable(buffer, rootOffset, 30)
+          ..mmprojSizeBytes = const fb.Int64Reader().vTableGetNullable(
+            buffer,
+            rootOffset,
+            32,
+          );
 
         return object;
       },
@@ -560,13 +617,17 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final messageIdOffset = fbb.writeString(object.messageId);
         final roleOffset = fbb.writeString(object.role);
         final contentOffset = fbb.writeString(object.content);
-        fbb.startTable(7);
+        final imagePathOffset = object.imagePath == null
+            ? null
+            : fbb.writeString(object.imagePath!);
+        fbb.startTable(8);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, conversationIdOffset);
         fbb.addOffset(2, messageIdOffset);
         fbb.addOffset(3, roleOffset);
         fbb.addOffset(4, contentOffset);
         fbb.addInt64(5, object.createdAtMs);
+        fbb.addOffset(6, imagePathOffset);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -593,7 +654,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
             rootOffset,
             14,
             0,
-          );
+          )
+          ..imagePath = const fb.StringReader(
+            asciiOptimization: true,
+          ).vTableGetNullable(buffer, rootOffset, 16);
 
         return object;
       },
@@ -773,6 +837,26 @@ class ModelEntity_ {
   static final format = obx.QueryStringProperty<ModelEntity>(
     _entities[0].properties[10],
   );
+
+  /// See [ModelEntity.mmprojFilename].
+  static final mmprojFilename = obx.QueryStringProperty<ModelEntity>(
+    _entities[0].properties[11],
+  );
+
+  /// See [ModelEntity.mmprojHuggingFaceRepo].
+  static final mmprojHuggingFaceRepo = obx.QueryStringProperty<ModelEntity>(
+    _entities[0].properties[12],
+  );
+
+  /// See [ModelEntity.mmprojLocalPath].
+  static final mmprojLocalPath = obx.QueryStringProperty<ModelEntity>(
+    _entities[0].properties[13],
+  );
+
+  /// See [ModelEntity.mmprojSizeBytes].
+  static final mmprojSizeBytes = obx.QueryIntegerProperty<ModelEntity>(
+    _entities[0].properties[14],
+  );
 }
 
 /// [ConversationEntity] entity fields to define ObjectBox queries.
@@ -863,6 +947,11 @@ class MessageEntity_ {
   /// See [MessageEntity.createdAtMs].
   static final createdAtMs = obx.QueryIntegerProperty<MessageEntity>(
     _entities[2].properties[5],
+  );
+
+  /// See [MessageEntity.imagePath].
+  static final imagePath = obx.QueryStringProperty<MessageEntity>(
+    _entities[2].properties[6],
   );
 }
 

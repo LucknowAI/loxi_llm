@@ -13,6 +13,7 @@ _$MessageImpl _$$MessageImplFromJson(Map<String, dynamic> json) =>
       role: $enumDecode(_$MessageRoleEnumMap, json['role']),
       content: json['content'] as String,
       createdAtMs: (json['createdAtMs'] as num).toInt(),
+      imagePath: json['imagePath'] as String?,
     );
 
 Map<String, dynamic> _$$MessageImplToJson(_$MessageImpl instance) =>
@@ -22,6 +23,7 @@ Map<String, dynamic> _$$MessageImplToJson(_$MessageImpl instance) =>
       'role': _$MessageRoleEnumMap[instance.role]!,
       'content': instance.content,
       'createdAtMs': instance.createdAtMs,
+      'imagePath': instance.imagePath,
     };
 
 const _$MessageRoleEnumMap = {
