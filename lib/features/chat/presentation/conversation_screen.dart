@@ -508,7 +508,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                         );
                       }
                       return MessageBubble(
-                        content: '$streamingText▌',
+                        content: streamingText,
                         isUser: false,
                         isStreaming: true,
                       );

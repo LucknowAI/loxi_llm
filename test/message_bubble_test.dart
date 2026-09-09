@@ -113,4 +113,42 @@ void main() {
 
     expect(find.byIcon(Icons.broken_image_outlined), findsOneWidget);
   });
+
+  testWidgets('assistant bubble renders markdown instead of raw markers',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            content: 'Hello **world**',
+            isUser: false,
+            isStreaming: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('**world**', findRichText: true), findsNothing);
+    expect(find.textContaining('world', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('user bubble renders markdown instead of raw markers',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            content: 'keep **stars**',
+            isUser: true,
+            isStreaming: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('**stars**', findRichText: true), findsNothing);
+    expect(find.textContaining('stars', findRichText: true), findsOneWidget);
+  });
 }
