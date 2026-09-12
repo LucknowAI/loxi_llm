@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:gpt_markdown/gpt_markdown.dart';
 import '../../../core/providers/inference_provider.dart';
 import 'conversation_list_notifier.dart';
 
@@ -103,7 +104,14 @@ class _ConversationListView extends ConsumerWidget {
                 itemBuilder: (context, index) {
                   final conv = conversations[index];
                   return ListTile(
-                    title: Text(conv.title),
+                    title: GptMarkdown(
+                      conv.title,
+                      style: Theme.of(context).textTheme.titleMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      animation: GptMarkdownAnimation.none,
+                      isStreaming: false,
+                    ),
                     subtitle: Text(
                         conv.modelId.isNotEmpty ? conv.modelId : 'No model'),
                     trailing: IconButton(
