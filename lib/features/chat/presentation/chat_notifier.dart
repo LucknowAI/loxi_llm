@@ -150,6 +150,15 @@ class ChatNotifier extends _$ChatNotifier {
   /// trace can be tagged [TraceOutcome.stopped] rather than `done`.
   bool _stopRequested = false;
 
+  /// Bumped once at the start of every [send] call. Each call's streaming
+  /// callbacks (token/onDone/onError) capture the value current at their own
+  /// start and check it against this field before writing to [state] — a
+  /// stale callback from a call that's been superseded by a newer [send]
+  /// (e.g. a retry that raced in during the first call's `await
+  /// backend.stop()`) becomes a no-op instead of clobbering the newer call's
+  /// state.
+  int _generation = 0;
+
   @override
   Future<ChatState> build(String conversationId) async {
     ref.onDispose(() => _tokenSub?.cancel());
@@ -170,6 +179,7 @@ class ChatNotifier extends _$ChatNotifier {
     final log = AppLogger.instance;
     if (!shouldSendMessage(userText, imagePath)) return;
     _stopRequested = false;
+    final myGeneration = ++_generation;
 
     log.info(_logTag,
         'send() conversation=$conversationId userTextLen=${userText.trim().length}');
@@ -379,6 +389,7 @@ class ChatNotifier extends _$ChatNotifier {
           .timeout(generationTimeout)
           .listen(
         (token) {
+          if (myGeneration != _generation) return;
           if (tokenCount == 0) {
             log.info(_logTag, 'first token received');
             firstTokenMs = DateTime.now().millisecondsSinceEpoch - genStartMs;
@@ -390,6 +401,7 @@ class ChatNotifier extends _$ChatNotifier {
           );
         },
         onDone: () {
+          if (myGeneration != _generation) return;
           log.info(_logTag,
               'generation ${_stopRequested ? 'stopped' : 'done'}: '
               '$tokenCount tokens, ${buffer.length} chars');
@@ -425,9 +437,15 @@ class ChatNotifier extends _$ChatNotifier {
           // A client-side timeout only stops the Dart listener — the native
           // generation may still be running. Tell it to stop so it doesn't
           // keep burning CPU/battery, and so the next turn starts clean.
-          // Awaited (rather than fire-and-forget) so `isStreaming` only turns
-          // false, letting a retry through, once the native stop has actually
-          // landed — otherwise a fast retry can race its own generate() call.
+          // Awaited (rather than fire-and-forget) so a fast retry can't send
+          // a second generate() call before the stop request has even been
+          // delivered. This only guarantees the native stop *flag* was set,
+          // though — not that generation has actually finished (the native
+          // executor can still be mid-loop), so an immediate retry can still
+          // hit a BUSY error. The `myGeneration` check below guards the case
+          // that matters here: a retry racing in during this await and
+          // completing before it does, which would otherwise have this stale
+          // callback overwrite the retry's state with the old timeout.
           if (e is TimeoutException) {
             try {
               await backend.stop();
@@ -436,6 +454,7 @@ class ChatNotifier extends _$ChatNotifier {
                   _logTag, 'backend.stop() after timeout failed', stopError, stopSt);
             }
           }
+          if (myGeneration != _generation) return;
           state = AsyncError(e, st);
         },
         cancelOnError: true,
@@ -519,6 +538,18 @@ class ChatNotifier extends _$ChatNotifier {
       return summary;
     } catch (e, st) {
       log.warn(_logTag, 'summarization failed (continuing): $e\n$st');
+      // Same reasoning as the plain-generation path's onError: a client-side
+      // timeout here only stops this Dart listener — the native
+      // summarization call may still be running — so tell it to stop before
+      // this turn's own generate() call starts, or the two would race.
+      if (e is TimeoutException) {
+        try {
+          await backend.stop();
+        } catch (stopError, stopSt) {
+          log.error(_logTag, 'backend.stop() after summarization timeout failed',
+              stopError, stopSt);
+        }
+      }
       return existingSummary;
     }
   }
