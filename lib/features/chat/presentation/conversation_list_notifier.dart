@@ -1,4 +1,5 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../../../core/providers/download_provider.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../../agent/agent_model_support.dart';
 import '../data/conversation_repository.dart';
@@ -74,7 +75,15 @@ class ConversationListNotifier extends _$ConversationListNotifier {
   }
 
   void deleteConversation(String conversationId) {
-    ref.read(messageRepositoryProvider).deleteByConversationId(conversationId);
+    final msgRepo = ref.read(messageRepositoryProvider);
+    final storage = ref.read(fileStorageServiceProvider);
+    // Fire-and-forget: attached images live on disk, not in ObjectBox, and
+    // deleting them shouldn't block removing the conversation.
+    for (final message in msgRepo.getMessages(conversationId)) {
+      final imagePath = message.imagePath;
+      if (imagePath != null) storage.deleteImage(imagePath);
+    }
+    msgRepo.deleteByConversationId(conversationId);
     ref.read(conversationRepositoryProvider).delete(conversationId);
     ref.invalidateSelf();
   }

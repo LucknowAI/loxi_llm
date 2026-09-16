@@ -65,6 +65,31 @@ void main() {
       expect(model.canLoad, isFalse);
     });
 
+    test('Model.canLoad is true when status is error and localPath is set '
+        '(retrying a failed load)', () {
+      const model = Model(
+        id: 'test-2b',
+        name: 'Test Model',
+        sizeLabel: '2GB',
+        sizeBytes: 2000000000,
+        status: ModelStatus.error,
+        localPath: '/tmp/test.gguf',
+      );
+      expect(model.canLoad, isTrue);
+    });
+
+    test('Model.canLoad is false when status is error and localPath is null '
+        '(failed download, nothing to retry-load)', () {
+      const model = Model(
+        id: 'test-2c',
+        name: 'Test Model',
+        sizeLabel: '2GB',
+        sizeBytes: 2000000000,
+        status: ModelStatus.error,
+      );
+      expect(model.canLoad, isFalse);
+    });
+
     test('Model.isDownloading returns true when status is downloading', () {
       const model = Model(
         id: 'test-3',

@@ -62,6 +62,7 @@ class MessageRepository {
         ),
         content: e.content,
         createdAtMs: e.createdAtMs,
+        imagePath: e.imagePath,
       );
 
   void _updateEntity(MessageEntity e, Message m) {
@@ -70,5 +71,6 @@ class MessageRepository {
     e.role = m.role.name;
     e.content = m.content;
     e.createdAtMs = m.createdAtMs;
+    e.imagePath = m.imagePath;
   }
 }

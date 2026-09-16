@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/inference_provider.dart';
 import 'conversation_list_notifier.dart';
+import 'widgets/chat_markdown_text.dart';
 
 class ChatScreen extends ConsumerWidget {
   const ChatScreen({super.key});
@@ -103,7 +104,13 @@ class _ConversationListView extends ConsumerWidget {
                 itemBuilder: (context, index) {
                   final conv = conversations[index];
                   return ListTile(
-                    title: Text(conv.title),
+                    title: ChatMarkdownText(
+                      conv.title,
+                      style: Theme.of(context).textTheme.titleMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      inlineOnly: true,
+                    ),
                     subtitle: Text(
                         conv.modelId.isNotEmpty ? conv.modelId : 'No model'),
                     trailing: IconButton(

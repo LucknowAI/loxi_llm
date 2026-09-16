@@ -19,13 +19,18 @@ class Model with _$Model {
     String? huggingFaceRepo,
     String? filename,
     @Default('gguf') String format,
+    String? mmprojFilename,
+    String? mmprojHuggingFaceRepo,
+    String? mmprojLocalPath,
+    int? mmprojSizeBytes,
   }) = _Model;
 
   factory Model.fromJson(Map<String, dynamic> json) => _$ModelFromJson(json);
 
   bool get isDownloaded => status == ModelStatus.downloaded;
   bool get isDownloading => status == ModelStatus.downloading;
-  bool get canLoad => status == ModelStatus.downloaded && localPath != null;
+  bool get canLoad => localPath != null &&
+      (status == ModelStatus.downloaded || status == ModelStatus.error);
 
   String? get recommendationBadge => switch (id) {
         'gemma3-270m-it' => 'Fastest',
@@ -34,3 +39,8 @@ class Model with _$Model {
         _ => null,
       };
 }
+
+/// True when [model] has a companion mmproj vision projector configured.
+/// The single source of truth — no separate boolean flag to drift out of
+/// sync with it.
+bool isMultimodalModel(Model model) => model.mmprojFilename != null;

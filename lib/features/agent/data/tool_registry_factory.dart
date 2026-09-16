@@ -4,6 +4,7 @@ import '../../documents/data/document_repository.dart';
 import '../tools/calculator_tool.dart';
 import '../tools/datetime_tool.dart';
 import '../tools/document_search_tool.dart';
+import '../tools/get_settings_tool.dart';
 import '../tools/list_documents_tool.dart';
 import '../tools/recall_memory_tool.dart';
 import '../tools/unit_convert_tool.dart';
@@ -20,6 +21,7 @@ class ToolRegistryDeps {
     required this.chunkRepo,
     required this.embedQuery,
     required this.topK,
+    required this.chunkSize,
     this.summary = '',
     this.historyWindow = 20,
   });
@@ -30,6 +32,7 @@ class ToolRegistryDeps {
   final DocumentChunkRepository chunkRepo;
   final Future<List<double>> Function(String query) embedQuery;
   final int topK;
+  final int chunkSize;
   final String summary;
   final int historyWindow;
 }
@@ -56,6 +59,7 @@ ToolRegistry buildDefaultToolRegistry(
     ),
     ListDocumentsTool(listDocuments: deps.documentRepo.getAll),
     UnitConvertTool(),
+    GetSettingsTool(chunkSize: deps.chunkSize, topK: deps.topK),
   ].where((t) => enabled.contains(t.name)).toList();
 
   return ToolRegistry(tools);

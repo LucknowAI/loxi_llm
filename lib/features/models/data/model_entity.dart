@@ -35,5 +35,17 @@ class ModelEntity {
   @Property()
   String format = 'gguf';
 
+  @Property()
+  String? mmprojFilename;
+
+  @Property()
+  String? mmprojHuggingFaceRepo;
+
+  @Property()
+  String? mmprojLocalPath;
+
+  @Property()
+  int? mmprojSizeBytes;
+
   ModelEntity();
 }

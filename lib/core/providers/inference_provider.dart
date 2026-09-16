@@ -4,6 +4,8 @@ import '../../features/models/domain/model.dart';
 import '../../features/models/domain/model_status.dart';
 import '../engine/backend_selector.dart';
 import '../engine/inference_backend.dart';
+import '../logging/app_logger.dart';
+import '../services/ram_check_service.dart';
 
 part 'inference_provider.g.dart';
 
@@ -44,7 +46,7 @@ class InferenceNotifier extends _$InferenceNotifier {
       if (previousBackend != null) {
         await previousBackend.unloadModel();
       }
-      await backend.loadModel(model.localPath!);
+      await backend.loadModel(model.localPath!, mmprojPath: model.mmprojLocalPath);
       // Assign before [state] so listeners (e.g. load SnackBar) see the new model.
       loadedModel = model;
       state = AsyncData(backend);
@@ -55,7 +57,20 @@ class InferenceNotifier extends _$InferenceNotifier {
       }
     } catch (e, st) {
       loadedModel = null;
-      state = AsyncError(e, st);
+      // For a large model (base + mmproj, when present), a load failure is
+      // plausibly memory pressure — worth saying so, since the raw native
+      // exception ("failed to load model at <path>") doesn't hint at why.
+      // Smaller models keep the original exception: memory is a much less
+      // likely culprit there, so a confident-sounding memory hint would
+      // often just be wrong.
+      final displayError = isLargeModel(model)
+          ? StateError(
+              '${model.name} — this can happen when the device doesn\'t '
+              'have enough free memory for a model this size.')
+          : e;
+      state = AsyncError(displayError, st);
+      AppLogger.instance.error(
+          'InferenceNotifier', 'Failed to load model ${model.id}', e, st);
       final repo = ref.read(modelRepositoryProvider);
       repo.save(model.copyWith(status: ModelStatus.error));
       if (previousModel != null && previousModel.id != model.id) {

@@ -30,6 +30,10 @@ mixin _$Model {
   String? get huggingFaceRepo => throw _privateConstructorUsedError;
   String? get filename => throw _privateConstructorUsedError;
   String get format => throw _privateConstructorUsedError;
+  String? get mmprojFilename => throw _privateConstructorUsedError;
+  String? get mmprojHuggingFaceRepo => throw _privateConstructorUsedError;
+  String? get mmprojLocalPath => throw _privateConstructorUsedError;
+  int? get mmprojSizeBytes => throw _privateConstructorUsedError;
 
   /// Serializes this Model to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -55,7 +59,11 @@ abstract class $ModelCopyWith<$Res> {
       String? localPath,
       String? huggingFaceRepo,
       String? filename,
-      String format});
+      String format,
+      String? mmprojFilename,
+      String? mmprojHuggingFaceRepo,
+      String? mmprojLocalPath,
+      int? mmprojSizeBytes});
 }
 
 /// @nodoc
@@ -83,6 +91,10 @@ class _$ModelCopyWithImpl<$Res, $Val extends Model>
     Object? huggingFaceRepo = freezed,
     Object? filename = freezed,
     Object? format = null,
+    Object? mmprojFilename = freezed,
+    Object? mmprojHuggingFaceRepo = freezed,
+    Object? mmprojLocalPath = freezed,
+    Object? mmprojSizeBytes = freezed,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -125,6 +137,22 @@ class _$ModelCopyWithImpl<$Res, $Val extends Model>
           ? _value.format
           : format // ignore: cast_nullable_to_non_nullable
               as String,
+      mmprojFilename: freezed == mmprojFilename
+          ? _value.mmprojFilename
+          : mmprojFilename // ignore: cast_nullable_to_non_nullable
+              as String?,
+      mmprojHuggingFaceRepo: freezed == mmprojHuggingFaceRepo
+          ? _value.mmprojHuggingFaceRepo
+          : mmprojHuggingFaceRepo // ignore: cast_nullable_to_non_nullable
+              as String?,
+      mmprojLocalPath: freezed == mmprojLocalPath
+          ? _value.mmprojLocalPath
+          : mmprojLocalPath // ignore: cast_nullable_to_non_nullable
+              as String?,
+      mmprojSizeBytes: freezed == mmprojSizeBytes
+          ? _value.mmprojSizeBytes
+          : mmprojSizeBytes // ignore: cast_nullable_to_non_nullable
+              as int?,
     ) as $Val);
   }
 }
@@ -146,7 +174,11 @@ abstract class _$$ModelImplCopyWith<$Res> implements $ModelCopyWith<$Res> {
       String? localPath,
       String? huggingFaceRepo,
       String? filename,
-      String format});
+      String format,
+      String? mmprojFilename,
+      String? mmprojHuggingFaceRepo,
+      String? mmprojLocalPath,
+      int? mmprojSizeBytes});
 }
 
 /// @nodoc
@@ -172,6 +204,10 @@ class __$$ModelImplCopyWithImpl<$Res>
     Object? huggingFaceRepo = freezed,
     Object? filename = freezed,
     Object? format = null,
+    Object? mmprojFilename = freezed,
+    Object? mmprojHuggingFaceRepo = freezed,
+    Object? mmprojLocalPath = freezed,
+    Object? mmprojSizeBytes = freezed,
   }) {
     return _then(_$ModelImpl(
       id: null == id
@@ -214,6 +250,22 @@ class __$$ModelImplCopyWithImpl<$Res>
           ? _value.format
           : format // ignore: cast_nullable_to_non_nullable
               as String,
+      mmprojFilename: freezed == mmprojFilename
+          ? _value.mmprojFilename
+          : mmprojFilename // ignore: cast_nullable_to_non_nullable
+              as String?,
+      mmprojHuggingFaceRepo: freezed == mmprojHuggingFaceRepo
+          ? _value.mmprojHuggingFaceRepo
+          : mmprojHuggingFaceRepo // ignore: cast_nullable_to_non_nullable
+              as String?,
+      mmprojLocalPath: freezed == mmprojLocalPath
+          ? _value.mmprojLocalPath
+          : mmprojLocalPath // ignore: cast_nullable_to_non_nullable
+              as String?,
+      mmprojSizeBytes: freezed == mmprojSizeBytes
+          ? _value.mmprojSizeBytes
+          : mmprojSizeBytes // ignore: cast_nullable_to_non_nullable
+              as int?,
     ));
   }
 }
@@ -231,7 +283,11 @@ class _$ModelImpl extends _Model {
       this.localPath,
       this.huggingFaceRepo,
       this.filename,
-      this.format = 'gguf'})
+      this.format = 'gguf',
+      this.mmprojFilename,
+      this.mmprojHuggingFaceRepo,
+      this.mmprojLocalPath,
+      this.mmprojSizeBytes})
       : super._();
 
   factory _$ModelImpl.fromJson(Map<String, dynamic> json) =>
@@ -260,10 +316,18 @@ class _$ModelImpl extends _Model {
   @override
   @JsonKey()
   final String format;
+  @override
+  final String? mmprojFilename;
+  @override
+  final String? mmprojHuggingFaceRepo;
+  @override
+  final String? mmprojLocalPath;
+  @override
+  final int? mmprojSizeBytes;
 
   @override
   String toString() {
-    return 'Model(id: $id, name: $name, sizeLabel: $sizeLabel, sizeBytes: $sizeBytes, status: $status, downloadProgress: $downloadProgress, localPath: $localPath, huggingFaceRepo: $huggingFaceRepo, filename: $filename, format: $format)';
+    return 'Model(id: $id, name: $name, sizeLabel: $sizeLabel, sizeBytes: $sizeBytes, status: $status, downloadProgress: $downloadProgress, localPath: $localPath, huggingFaceRepo: $huggingFaceRepo, filename: $filename, format: $format, mmprojFilename: $mmprojFilename, mmprojHuggingFaceRepo: $mmprojHuggingFaceRepo, mmprojLocalPath: $mmprojLocalPath, mmprojSizeBytes: $mmprojSizeBytes)';
   }
 
   @override
@@ -286,13 +350,35 @@ class _$ModelImpl extends _Model {
                 other.huggingFaceRepo == huggingFaceRepo) &&
             (identical(other.filename, filename) ||
                 other.filename == filename) &&
-            (identical(other.format, format) || other.format == format));
+            (identical(other.format, format) || other.format == format) &&
+            (identical(other.mmprojFilename, mmprojFilename) ||
+                other.mmprojFilename == mmprojFilename) &&
+            (identical(other.mmprojHuggingFaceRepo, mmprojHuggingFaceRepo) ||
+                other.mmprojHuggingFaceRepo == mmprojHuggingFaceRepo) &&
+            (identical(other.mmprojLocalPath, mmprojLocalPath) ||
+                other.mmprojLocalPath == mmprojLocalPath) &&
+            (identical(other.mmprojSizeBytes, mmprojSizeBytes) ||
+                other.mmprojSizeBytes == mmprojSizeBytes));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(runtimeType, id, name, sizeLabel, sizeBytes,
-      status, downloadProgress, localPath, huggingFaceRepo, filename, format);
+  int get hashCode => Object.hash(
+      runtimeType,
+      id,
+      name,
+      sizeLabel,
+      sizeBytes,
+      status,
+      downloadProgress,
+      localPath,
+      huggingFaceRepo,
+      filename,
+      format,
+      mmprojFilename,
+      mmprojHuggingFaceRepo,
+      mmprojLocalPath,
+      mmprojSizeBytes);
 
   /// Create a copy of Model
   /// with the given fields replaced by the non-null parameter values.
@@ -321,7 +407,11 @@ abstract class _Model extends Model {
       final String? localPath,
       final String? huggingFaceRepo,
       final String? filename,
-      final String format}) = _$ModelImpl;
+      final String format,
+      final String? mmprojFilename,
+      final String? mmprojHuggingFaceRepo,
+      final String? mmprojLocalPath,
+      final int? mmprojSizeBytes}) = _$ModelImpl;
   const _Model._() : super._();
 
   factory _Model.fromJson(Map<String, dynamic> json) = _$ModelImpl.fromJson;
@@ -346,6 +436,14 @@ abstract class _Model extends Model {
   String? get filename;
   @override
   String get format;
+  @override
+  String? get mmprojFilename;
+  @override
+  String? get mmprojHuggingFaceRepo;
+  @override
+  String? get mmprojLocalPath;
+  @override
+  int? get mmprojSizeBytes;
 
   /// Create a copy of Model
   /// with the given fields replaced by the non-null parameter values.

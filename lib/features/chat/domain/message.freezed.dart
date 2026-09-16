@@ -24,7 +24,9 @@ mixin _$Message {
   String get conversationId => throw _privateConstructorUsedError;
   MessageRole get role => throw _privateConstructorUsedError;
   String get content => throw _privateConstructorUsedError;
-  int get createdAtMs => throw _privateConstructorUsedError;
+  int get createdAtMs =>
+      throw _privateConstructorUsedError; // DateTime.now().millisecondsSinceEpoch
+  String? get imagePath => throw _privateConstructorUsedError;
 
   /// Serializes this Message to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -45,7 +47,8 @@ abstract class $MessageCopyWith<$Res> {
       String conversationId,
       MessageRole role,
       String content,
-      int createdAtMs});
+      int createdAtMs,
+      String? imagePath});
 }
 
 /// @nodoc
@@ -68,6 +71,7 @@ class _$MessageCopyWithImpl<$Res, $Val extends Message>
     Object? role = null,
     Object? content = null,
     Object? createdAtMs = null,
+    Object? imagePath = freezed,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -90,6 +94,10 @@ class _$MessageCopyWithImpl<$Res, $Val extends Message>
           ? _value.createdAtMs
           : createdAtMs // ignore: cast_nullable_to_non_nullable
               as int,
+      imagePath: freezed == imagePath
+          ? _value.imagePath
+          : imagePath // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -106,7 +114,8 @@ abstract class _$$MessageImplCopyWith<$Res> implements $MessageCopyWith<$Res> {
       String conversationId,
       MessageRole role,
       String content,
-      int createdAtMs});
+      int createdAtMs,
+      String? imagePath});
 }
 
 /// @nodoc
@@ -127,6 +136,7 @@ class __$$MessageImplCopyWithImpl<$Res>
     Object? role = null,
     Object? content = null,
     Object? createdAtMs = null,
+    Object? imagePath = freezed,
   }) {
     return _then(_$MessageImpl(
       id: null == id
@@ -149,6 +159,10 @@ class __$$MessageImplCopyWithImpl<$Res>
           ? _value.createdAtMs
           : createdAtMs // ignore: cast_nullable_to_non_nullable
               as int,
+      imagePath: freezed == imagePath
+          ? _value.imagePath
+          : imagePath // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -161,7 +175,8 @@ class _$MessageImpl extends _Message {
       required this.conversationId,
       required this.role,
       required this.content,
-      required this.createdAtMs})
+      required this.createdAtMs,
+      this.imagePath})
       : super._();
 
   factory _$MessageImpl.fromJson(Map<String, dynamic> json) =>
@@ -177,10 +192,13 @@ class _$MessageImpl extends _Message {
   final String content;
   @override
   final int createdAtMs;
+// DateTime.now().millisecondsSinceEpoch
+  @override
+  final String? imagePath;
 
   @override
   String toString() {
-    return 'Message(id: $id, conversationId: $conversationId, role: $role, content: $content, createdAtMs: $createdAtMs)';
+    return 'Message(id: $id, conversationId: $conversationId, role: $role, content: $content, createdAtMs: $createdAtMs, imagePath: $imagePath)';
   }
 
   @override
@@ -194,13 +212,15 @@ class _$MessageImpl extends _Message {
             (identical(other.role, role) || other.role == role) &&
             (identical(other.content, content) || other.content == content) &&
             (identical(other.createdAtMs, createdAtMs) ||
-                other.createdAtMs == createdAtMs));
+                other.createdAtMs == createdAtMs) &&
+            (identical(other.imagePath, imagePath) ||
+                other.imagePath == imagePath));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode =>
-      Object.hash(runtimeType, id, conversationId, role, content, createdAtMs);
+  int get hashCode => Object.hash(
+      runtimeType, id, conversationId, role, content, createdAtMs, imagePath);
 
   /// Create a copy of Message
   /// with the given fields replaced by the non-null parameter values.
@@ -224,7 +244,8 @@ abstract class _Message extends Message {
       required final String conversationId,
       required final MessageRole role,
       required final String content,
-      required final int createdAtMs}) = _$MessageImpl;
+      required final int createdAtMs,
+      final String? imagePath}) = _$MessageImpl;
   const _Message._() : super._();
 
   factory _Message.fromJson(Map<String, dynamic> json) = _$MessageImpl.fromJson;
@@ -238,7 +259,9 @@ abstract class _Message extends Message {
   @override
   String get content;
   @override
-  int get createdAtMs;
+  int get createdAtMs; // DateTime.now().millisecondsSinceEpoch
+  @override
+  String? get imagePath;
 
   /// Create a copy of Message
   /// with the given fields replaced by the non-null parameter values.

@@ -102,7 +102,7 @@ void main() {
       addTearDown(container.dispose);
 
       final settings = container.read(settingsNotifierProvider);
-      expect(settings.enabledToolNames.length, equals(6));
+      expect(settings.enabledToolNames.length, equals(7));
       expect(settings.enabledToolNames, contains('calculator'));
       expect(settings.enabledToolNames, contains('unit_convert'));
     });
@@ -116,8 +116,8 @@ void main() {
           .setToolEnabled('calculator', false);
 
       expect(
-        prefs.getString('settings_enabled_tools'),
-        isNot(contains('calculator')),
+        prefs.getString('settings_disabled_tools'),
+        contains('calculator'),
       );
       expect(
         container.read(settingsNotifierProvider).enabledToolNames,
@@ -133,11 +133,48 @@ void main() {
       notifier.setToolEnabled('datetime', false);
       notifier.setToolEnabled('datetime', true);
 
-      expect(prefs.getString('settings_enabled_tools'), contains('datetime'));
+      expect(
+        prefs.getString('settings_disabled_tools'),
+        isNot(contains('datetime')),
+      );
       expect(
         container.read(settingsNotifierProvider).enabledToolNames,
         contains('datetime'),
       );
+    });
+
+    test('a tool added to the catalog after a prior save defaults to enabled',
+        () async {
+      // Simulates a pre-1.2.0 user who disabled one tool before get_settings
+      // existed: only calculator is recorded as disabled, so get_settings
+      // (unseen at save time) must still come back enabled (#67).
+      final (container, _) = await makeContainer(
+        initialValues: {'settings_disabled_tools': 'calculator'},
+      );
+      addTearDown(container.dispose);
+
+      final settings = container.read(settingsNotifierProvider);
+      expect(settings.enabledToolNames, isNot(contains('calculator')));
+      expect(settings.enabledToolNames, contains('get_settings'));
+    });
+
+    test(
+        'ignores a pre-1.2.0 settings_enabled_tools opt-in list and enables '
+        'every catalog tool', () async {
+      // A pre-1.2.0 user's only persisted state is the old opt-in key
+      // (settings_enabled_tools), fixed at save time and missing tools like
+      // get_settings that didn't exist yet. The fix for #67 stopped reading
+      // that key entirely in favor of the opt-out settings_disabled_tools
+      // key, so this list must be ignored rather than filtering the tool
+      // set down to just its members.
+      final (container, _) = await makeContainer(
+        initialValues: {'settings_enabled_tools': 'calculator,unit_convert'},
+      );
+      addTearDown(container.dispose);
+
+      final settings = container.read(settingsNotifierProvider);
+      expect(settings.enabledToolNames.length, equals(7));
+      expect(settings.enabledToolNames, contains('get_settings'));
     });
   });
 }

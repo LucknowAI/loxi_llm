@@ -14,6 +14,7 @@ class Message with _$Message {
     required MessageRole role,
     required String content,
     required int createdAtMs, // DateTime.now().millisecondsSinceEpoch
+    String? imagePath,
   }) = _Message;
 
   factory Message.fromJson(Map<String, dynamic> json) => _$MessageFromJson(json);

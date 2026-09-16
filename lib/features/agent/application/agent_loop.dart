@@ -23,24 +23,29 @@ class AgentResult {
     required this.answer,
     required this.steps,
     required this.hitIterationCap,
+    this.stopped = false,
   });
 
   final String answer;
   final List<AgentStep> steps;
   final bool hitIterationCap;
+
+  /// True when the loop exited because the caller requested cancellation.
+  final bool stopped;
 }
 
 /// A bounded tool-calling loop: generate → parse a tool call → execute it →
 /// feed the observation back → repeat, until the model answers in plain text or
 /// the iteration cap is reached.
 ///
-/// [generate] is injected (it formats the turns and runs the model to
+/// [generateStream] is injected (it formats the turns and runs the model to
 /// completion), so the loop is backend-agnostic and unit-testable with a fake.
 class AgentLoop {
   AgentLoop({
     required this.generateStream,
     required this.registry,
     this.maxIterations = 5,
+    this.isCancelled,
     this.onToolCall,
     this.onAnswerToken,
     this.onToolResult,
@@ -50,6 +55,9 @@ class AgentLoop {
   final Stream<String> Function(List<ChatTurn> turns) generateStream;
   final ToolRegistry registry;
   final int maxIterations;
+
+  /// Returns true when the caller wants the loop to stop.
+  final bool Function()? isCancelled;
 
   /// Called with the tool name just before each tool runs (for UI status).
   final void Function(String toolName)? onToolCall;
@@ -61,11 +69,23 @@ class AgentLoop {
   final void Function(String toolName, String observation, int iteration)?
       onToolResult;
 
+  bool get _cancelled => isCancelled?.call() ?? false;
+
   Future<AgentResult> run(List<ChatTurn> initialTurns) async {
     final turns = [...initialTurns];
     final steps = <AgentStep>[];
 
     for (var i = 0; i < maxIterations; i++) {
+      // Do not start another model call after the caller has requested Stop.
+      if (_cancelled) {
+        return AgentResult(
+          answer: '',
+          steps: steps,
+          hitIterationCap: false,
+          stopped: true,
+        );
+      }
+
       // Consume one generation, peeking at the start to decide whether it is a
       // tool call (buffer silently) or the final answer (stream it).
       final buffer = StringBuffer();
@@ -88,6 +108,17 @@ class AgentLoop {
       }
 
       final output = buffer.toString();
+
+      // backend.stop() ends the in-flight stream. Check cancellation before
+      // parsing a possibly truncated tool call or starting any tool work.
+      if (_cancelled) {
+        return AgentResult(
+          answer: answerMode ? output.trim() : '',
+          steps: steps,
+          hitIterationCap: false,
+          stopped: true,
+        );
+      }
 
       // Answer mode → the final answer already streamed.
       if (answerMode) {

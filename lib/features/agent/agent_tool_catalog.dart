@@ -14,6 +14,7 @@ const kAgentToolCatalog = [
   AgentToolInfo(name: 'recall_memory', label: 'Recall memory'),
   AgentToolInfo(name: 'list_documents', label: 'List documents'),
   AgentToolInfo(name: 'unit_convert', label: 'Unit converter'),
+  AgentToolInfo(name: 'get_settings', label: 'RAG settings info'),
 ];
 
 /// Default enabled tool names (all on).
