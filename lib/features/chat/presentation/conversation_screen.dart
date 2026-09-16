@@ -19,6 +19,7 @@ import '../domain/message_role.dart';
 import 'chat_notifier.dart';
 import 'conversation_list_notifier.dart';
 import 'widgets/chat_markdown_text.dart';
+import 'widgets/image_attachment_thumbnail.dart';
 import 'widgets/message_bubble.dart';
 
 /// Whether a pending image attachment should survive an inference-state
@@ -587,30 +588,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(
-                            File(_attachedImagePath!),
-                            width: 64,
-                            height: 64,
-                            fit: BoxFit.cover,
-                            cacheWidth:
-                                (64 * MediaQuery.of(context).devicePixelRatio)
-                                    .round(),
-                            cacheHeight:
-                                (64 * MediaQuery.of(context).devicePixelRatio)
-                                    .round(),
-                            errorBuilder: (context, error, stackTrace) =>
-                                Container(
-                              width: 64,
-                              height: 64,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest,
-                              alignment: Alignment.center,
-                              child: const Icon(Icons.broken_image_outlined),
-                            ),
-                          ),
+                        ImageAttachmentThumbnail(
+                          path: _attachedImagePath!,
+                          size: 64,
+                          borderRadius: 8,
                         ),
                         Positioned(
                           top: -8,

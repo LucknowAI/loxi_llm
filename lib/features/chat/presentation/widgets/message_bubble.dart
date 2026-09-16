@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import 'chat_markdown_text.dart';
+import 'image_attachment_thumbnail.dart';
 
 /// A single chat message bubble with optional copy / read-aloud actions.
 class MessageBubble extends StatelessWidget {
@@ -62,29 +61,7 @@ class MessageBubble extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (imagePath != null) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.file(
-                  File(imagePath!),
-                  width: 200,
-                  height: 200,
-                  fit: BoxFit.cover,
-                  cacheWidth: (200 * MediaQuery.of(context).devicePixelRatio)
-                      .round(),
-                  cacheHeight: (200 * MediaQuery.of(context).devicePixelRatio)
-                      .round(),
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    width: 200,
-                    height: 200,
-                    color: colorScheme.surfaceContainerHighest,
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.broken_image_outlined,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
+              ImageAttachmentThumbnail(path: imagePath!, size: 200),
               const SizedBox(height: 8),
             ],
             if (child != null || (content?.isNotEmpty ?? false))
