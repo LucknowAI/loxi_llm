@@ -126,6 +126,12 @@ User-visible changes belong in [CHANGELOG.md](CHANGELOG.md) under the
 5. Tag `vX.Y.Z` on `main` and publish a [GitHub Release](https://github.com/LucknowAI/loxi_llm/releases).
 6. Merge `main` back into `develop`.
 
+See [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md) for the full
+checklist — pre-release readiness review, an issue-tracking gotcha with
+`develop`-targeted PRs, preserving contributor attribution through the
+squash merge, attaching a signed APK to the Release, and post-release
+housekeeping.
+
 ## Community
 
 - [Code of Conduct](CODE_OF_CONDUCT.md)
