@@ -648,7 +648,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                         ),
                         minLines: 1,
                         maxLines: 4,
-                        onSubmitted: (_) => _sendMessage(),
+                        // Mirror the Send/Stop button below: Enter must not
+                        // fire a second send() while one is already
+                        // streaming, the same gate `isModelLoaded` applies
+                        // to the button's onPressed.
+                        onSubmitted: isStreaming ? null : (_) => _sendMessage(),
                       ),
                     ),
                     const SizedBox(width: 8),
