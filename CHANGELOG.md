@@ -10,7 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Render chat messages as Markdown (user and assistant; streaming fade on assistant replies; conversation list titles) ([#39](https://github.com/LucknowAI/loxi_llm/issues/39))
+- Render chat messages as Markdown (user and assistant; streaming fade on assistant replies; conversation list titles) ([#39](https://github.com/LucknowAI/loxi_llm/issues/39), thanks [@ItsPriyamSri](https://github.com/ItsPriyamSri))
 - Agent tool: `get_settings` — reports the current RAG chunk size and top-K so the model can explain retrieval behavior to the user ([#12](https://github.com/LucknowAI/loxi_llm/issues/12))
 - Multimodal foundation: `Model`/`Message` domain support for a companion mmproj vision projector and attached images; `InferenceBackend` extended with `imagePaths`/`mmprojPath`/`supportsVision`; llama.cpp's `mtmd` vision toolkit wired into the native `llama_engine` plugin. ([#19](https://github.com/LucknowAI/loxi_llm/issues/19), [#20](https://github.com/LucknowAI/loxi_llm/issues/20))
 - Multimodal chat UI: attach an image from the gallery to a chat message via a new composer button, gated to vision-capable models; the image is copied into app storage, previewed before sending, and displayed on the sent message. Attachment cleanup runs on remove, re-pick, an unsent pick left on screen dispose, switching away from a vision model, and conversation deletion. ([#21](https://github.com/LucknowAI/loxi_llm/issues/21))
@@ -21,7 +21,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Agent Stop now halts a tool-enabled turn after the in-flight generation, prevents further tool/model calls, preserves partial final answers, and records stopped model I/O traces ([#6](https://github.com/LucknowAI/loxi_llm/issues/6))
+- Agent Stop now halts a tool-enabled turn after the in-flight generation, prevents further tool/model calls, preserves partial final answers, and records stopped model I/O traces ([#6](https://github.com/LucknowAI/loxi_llm/issues/6), thanks [@Zedrider9t](https://github.com/Zedrider9t))
 - Android: sideloading a `.gguf` model no longer throws `PlatformException` from `file_picker` — `.gguf` has no registered Android MIME type, so we now use `FileType.any` and validate the extension ourselves ([#7](https://github.com/LucknowAI/loxi_llm/issues/7))
 - Sideload no longer accepts `.task` files — no backend can load MediaPipe bundles since `MediaPipeBackend` was removed, so accepting them only led to a confusing load failure later ([#40](https://github.com/LucknowAI/loxi_llm/issues/40))
 - Android: fixed a native crash (`SIGABRT`, "Unexpected empty grammar stack") that could abort the app right after an agent tool call completed — the sampler chain applied the tool-call grammar after top_k/top_p pruning, which could discard the model's only grammar-valid continuation before grammar saw it. The grammar is now applied separately, sampling normally first and only re-sampling grammar-first when needed, matching llama.cpp's own reference sampler ([#43](https://github.com/LucknowAI/loxi_llm/issues/43))
@@ -32,6 +32,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Retrying a download whose mmproj leg failed after the (much larger) base model finished could loop forever on an HTTP 416 — re-requesting the already-complete base file past its end. A leg already fully on disk is now skipped instead of re-resumed (PR [#64](https://github.com/LucknowAI/loxi_llm/pull/64))
 - Tool settings: a user who had already customized their enabled-tools list before v1.2.0 never saw a tool added to the catalog afterward (e.g. `get_settings`) — persistence switched from an opt-in list to an opt-out one, so a newly catalogued tool is enabled by default unless the user explicitly turns it off ([#67](https://github.com/LucknowAI/loxi_llm/issues/67))
 - A retry sent right after a `send()` timeout could race the still in-flight native stop request and truncate the new turn's response — `send()`'s timeout handler now awaits `backend.stop()` (logging, not swallowing, any error from it) before signaling it's safe to retry, tags each turn so a stale timeout can never overwrite a newer turn's state, and closes the same gap in the Enter-key send path and the rolling-summary timeout handler ([#68](https://github.com/LucknowAI/loxi_llm/issues/68))
+
+### Contributors
+
+Thanks to our external contributors for this release: [@ItsPriyamSri](https://github.com/ItsPriyamSri) (#78, #79) and [@Zedrider9t](https://github.com/Zedrider9t) (#48)
 
 ## [1.1.0] — 2026-08-03
 
