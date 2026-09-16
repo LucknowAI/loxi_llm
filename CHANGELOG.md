@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-09-16
+
 ### Added
 
 - Render chat messages as Markdown (user and assistant; streaming fade on assistant replies; conversation list titles) ([#39](https://github.com/LucknowAI/loxi_llm/issues/39))
@@ -28,6 +30,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Chat composer: the text field (and, separately, the image attachment) could fail to clear after sending a message whose generation later failed for a reason unrelated to the send itself (e.g. a vision message where fetching the native image marker failed) — the message had already gone through, but the composer behaved as if it hadn't. Both now clear immediately on send and are only restored if the message genuinely never reached the model. A related, more severe bug meant any generation failure permanently wedged the conversation — every later `send()` rethrew the stale error before reaching generation, so no message after the first failure ever got a response. `send()` now recovers its message list from the repository when needed instead of crashing on stale state ([#59](https://github.com/LucknowAI/loxi_llm/issues/59))
 - Retrying a failed model load got stuck behind a permanent loading overlay: `Model.canLoad` rejected the `error` status the retry path itself produces, throwing before the failure could ever be reset back to `error` (PR [#64](https://github.com/LucknowAI/loxi_llm/pull/64))
 - Retrying a download whose mmproj leg failed after the (much larger) base model finished could loop forever on an HTTP 416 — re-requesting the already-complete base file past its end. A leg already fully on disk is now skipped instead of re-resumed (PR [#64](https://github.com/LucknowAI/loxi_llm/pull/64))
+- Tool settings: a user who had already customized their enabled-tools list before v1.2.0 never saw a tool added to the catalog afterward (e.g. `get_settings`) — persistence switched from an opt-in list to an opt-out one, so a newly catalogued tool is enabled by default unless the user explicitly turns it off ([#67](https://github.com/LucknowAI/loxi_llm/issues/67))
+- A retry sent right after a `send()` timeout could race the still in-flight native stop request and truncate the new turn's response — `send()`'s timeout handler now awaits `backend.stop()` (logging, not swallowing, any error from it) before signaling it's safe to retry, tags each turn so a stale timeout can never overwrite a newer turn's state, and closes the same gap in the Enter-key send path and the rolling-summary timeout handler ([#68](https://github.com/LucknowAI/loxi_llm/issues/68))
 
 ## [1.1.0] — 2026-08-03
 
