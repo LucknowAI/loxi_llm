@@ -6,13 +6,19 @@ name: Sync linked issues on merge
 #    fires on a merge into the repo's *default* branch (main) -- but
 #    CONTRIBUTING.md requires contributor PRs to target develop, so without
 #    this, every one of those issues stays open despite being fixed (this
-#    silently happened to 5+ issues before it was caught and fixed manually
-#    -- see docs/RELEASE_PROCESS.md's Phase 2).
+#    silently happened to 5+ issues before it was caught and fixed manually).
 # 2. Copies the PR's milestone onto it, if it doesn't already have one.
 #    "PR Policy" (pr-policy.yml) requires a milestone on every
 #    develop-targeted PR, so this is the normal path issues get milestoned
 #    through; the reopen-and-comment fallback below only fires if that
 #    requirement was somehow bypassed (e.g. an admin override).
+#
+# Scoped to PRs merged into develop only: a release PR (develop -> main) or
+# merge-back (main -> develop) can carry over "Fixes #N" text from squashed
+# commits and resurface issues that already shipped and closed, and those
+# often predate this policy and have no milestone -- which would otherwise
+# trip the no-milestone-available reopen fallback below on an already-closed
+# issue.
 on:
   pull_request:
     types: [closed]
@@ -26,7 +32,7 @@ jobs:
   sync-issues:
     name: Close and milestone linked issues
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'develop'
     steps:
       - name: Close + milestone every issue this PR closes
         uses: actions/github-script@v7
