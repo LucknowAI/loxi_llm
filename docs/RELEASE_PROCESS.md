@@ -32,6 +32,11 @@ but `CONTRIBUTING.md` requires all contributor PRs to target `develop`. So
 open, even though the fix has landed — this went unnoticed across two
 releases until manually audited (5 issues: #18, #65, #67, #68, #73).
 
+**As of the PR Policy workflows below, this is handled automatically** —
+`sync-issue-on-merge.yml` closes every issue a `develop`-targeted PR fixes as
+soon as it merges. The manual audit below is now a pre-existing-gap check
+(for issues merged before that workflow existed) rather than the normal path.
+
 Audit before every release:
 
 ```bash
@@ -46,6 +51,32 @@ gh issue view <N> --json state
 gh issue close <N> --comment \
   "Fixed by #<PR> (merged into \`develop\`). Not auto-closed since the PR's base was \`develop\`, not the repo's default branch (\`main\`)."
 ```
+
+## 2a. PR Policy: required issue link + milestone on every PR
+
+Two required checks run on every PR targeting `develop`
+(`.github/workflows/pr-policy.yml`):
+
+- **Require linked issue** — fails unless the PR references an issue via
+  `Fixes #N`/`Closes #N` in the description, or has one linked manually in
+  the sidebar (`CLAUDE.md`: every piece of implementation work needs a
+  tracking issue). Sidebar-only links don't fire a webhook, so that case
+  needs a manual re-run of the check after linking.
+- **Require milestone** — fails unless the PR itself has a milestone set.
+  This is deliberate: the milestone isn't inherited from the issue, it's set
+  on the PR and then *copied onto* the issue(s) it closes.
+
+On merge, `.github/workflows/sync-issue-on-merge.yml` copies the PR's
+milestone onto every issue it closes, but only if that issue doesn't already
+have one — so an issue can carry its own milestone (e.g. a roadmap issue
+tagged ahead of time) and this won't override it. If somehow neither the PR
+nor the issue ends up with a milestone (e.g. an admin override bypassed the
+required check), the issue is reopened with a comment asking for one, rather
+than silently shipping untracked.
+
+Both workflows are scoped to PRs whose **base is `develop`** — a release PR
+(`develop` → `main`) or merge-back (`main` → `develop`) is exempt, since
+those aren't tied to a single issue/milestone the way normal work is.
 
 ## 3. CHANGELOG + version bump — its own tracked chore
 
