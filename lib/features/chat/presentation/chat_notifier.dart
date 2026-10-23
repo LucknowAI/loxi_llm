@@ -461,9 +461,7 @@ class ChatNotifier extends _$ChatNotifier {
       );
     } catch (e, st) {
       log.error(_logTag, 'send() failed after persist, clearing streaming', e, st);
-      if (state.valueOrNull != null) {
-        state = AsyncData(state.requireValue.copyWith(clearStreaming: true));
-      }
+      _updateState((s) => s.copyWith(clearStreaming: true));
       // throwWithStackTrace rather than a plain throw so the wrapper's stack
       // trace still points at where [e] actually originated, not just this
       // catch block.
@@ -485,6 +483,12 @@ class ChatNotifier extends _$ChatNotifier {
     AppLogger.instance.info(_logTag, 'stop() requested');
     final backend = ref.read(inferenceNotifierProvider).valueOrNull;
     await backend?.stop();
+  }
+
+  void _updateState(ChatState Function(ChatState) update) {
+    if (state.valueOrNull != null) {
+      state = AsyncData(update(state.requireValue));
+    }
   }
 
   /// Fold any messages that have fallen outside the prompt window into the
@@ -604,11 +608,7 @@ class ChatNotifier extends _$ChatNotifier {
     final captureIo = settings.modelIoLoggingEnabled;
     var agentIteration = 0;
 
-    if (state.valueOrNull != null) {
-      state = AsyncData(
-        state.requireValue.copyWith(streamingText: 'Thinking…'),
-      );
-    }
+    _updateState((s) => s.copyWith(streamingText: 'Thinking…'));
 
     // One model call, streamed:
     Stream<String> generateStream(List<ChatTurn> turns) async* {
@@ -673,19 +673,11 @@ class ChatNotifier extends _$ChatNotifier {
       registry: registry,
       isCancelled: () => _stopRequested,
       onToolCall: (toolName) {
-        if (state.valueOrNull != null) {
-          state = AsyncData(
-            state.requireValue.copyWith(streamingText: 'Using $toolName…'),
-          );
-        }
+        _updateState((s) => s.copyWith(streamingText: 'Using $toolName…'));
       },
       onAnswerToken: (token) {
         answerBuffer.write(token);
-        if (state.valueOrNull != null) {
-          state = AsyncData(
-            state.requireValue.copyWith(streamingText: answerBuffer.toString()),
-          );
-        }
+        _updateState((s) => s.copyWith(streamingText: answerBuffer.toString()));
       },
       onToolResult: (toolName, observation, iteration) {
         if (!captureIo) return;
@@ -716,11 +708,7 @@ class ChatNotifier extends _$ChatNotifier {
           await loop.run(_historyTurns(history, imageMarker: imageMarker));
 
       if (result.stopped && result.answer.isEmpty) {
-        if (state.valueOrNull != null) {
-          state = AsyncData(
-            state.requireValue.copyWith(clearStreaming: true),
-          );
-        }
+        _updateState((s) => s.copyWith(clearStreaming: true));
         log.info(_logTag,
             'agent stopped: ${result.steps.length} tool step(s), no partial answer');
         return;
