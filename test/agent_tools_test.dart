@@ -5,6 +5,7 @@ import 'package:loki_llm/features/agent/tools/datetime_tool.dart';
 import 'package:loki_llm/features/agent/tools/document_search_tool.dart';
 import 'package:loki_llm/features/agent/tools/get_settings_tool.dart';
 import 'package:loki_llm/features/agent/tools/list_documents_tool.dart';
+import 'package:loki_llm/features/agent/tools/model_info_tool.dart';
 import 'package:loki_llm/features/agent/tools/recall_memory_tool.dart';
 import 'package:loki_llm/features/agent/tools/unit_convert_tool.dart';
 import 'package:loki_llm/features/agent/domain/tool_call_grammar.dart';
@@ -235,6 +236,37 @@ void main() {
 
     test('takes no arguments', () {
       expect(GetSettingsTool(chunkSize: 300, topK: 3).parameterSchema, isEmpty);
+    });
+  });
+
+  group('ModelInfoTool', () {
+    test('reports injected snapshots', () async {
+      final tool = ModelInfoTool(
+        modelName: 'Gemma 3 270M IT',
+        backendName: 'LlamaCppBackend',
+        contextSize: 2048,
+        agentCapable: false,
+        ragEnabled: true,
+      );
+      final result = await tool.call({});
+      expect(result, contains('Gemma 3 270M IT'));
+      expect(result, contains('LlamaCppBackend'));
+      expect(result, contains('2048'));
+      expect(result, contains('no'));
+      expect(result, contains('yes'));
+      expect(result, contains('Retrieval-augmented generation (RAG)'));
+    });
+
+    test('takes no arguments', () {
+      expect(
+        ModelInfoTool(
+          modelName: 'x',
+          backendName: 'y',
+          agentCapable: true,
+          ragEnabled: false,
+        ).parameterSchema,
+        isEmpty,
+      );
     });
   });
 

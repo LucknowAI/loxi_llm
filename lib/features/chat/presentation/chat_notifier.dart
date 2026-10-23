@@ -578,6 +578,9 @@ class ChatNotifier extends _$ChatNotifier {
     final settings = ref.read(settingsNotifierProvider);
     final embService = ref.read(embeddingServiceProvider).valueOrNull;
     final chunkRepo = ref.read(documentChunkRepositoryProvider);
+    final loadedModel =
+        ref.read(inferenceNotifierProvider.notifier).loadedModel;
+    final ctx = backend.generationParams['contextSize'];
     final registry = buildDefaultToolRegistry(
       ToolRegistryDeps(
         conversationId: conversationId,
@@ -594,6 +597,11 @@ class ChatNotifier extends _$ChatNotifier {
         chunkSize: settings.chunkSize,
         summary: summary,
         historyWindow: _maxHistoryMessages,
+        modelName: loadedModel?.name ?? 'unknown',
+        backendName: backend.runtimeType.toString(),
+        contextSize: ctx is int ? ctx : null,
+        agentCapable: isAgentCapableModel(loadedModel?.id),
+        ragEnabled: ragEnabled,
       ),
       enabledToolNames: settings.enabledToolNames,
     );
