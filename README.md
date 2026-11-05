@@ -42,6 +42,7 @@ _Coming soon._ <!-- Add screenshots under docs/screenshots/ and reference here. 
 | Gemma 3 270M IT | ~253 MB | `unsloth/gemma-3-270m-it-GGUF` | [Gemma Terms](https://ai.google.dev/gemma/terms) |
 | Phi-3 Mini 4K | ~2.4 GB | `bartowski/Phi-3-mini-4k-instruct-GGUF` | MIT |
 | Llama 3.2 3B | ~2.0 GB | `bartowski/Llama-3.2-3B-Instruct-GGUF` | [Llama 3.2 Community License](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/LICENSE) |
+| LFM3 1.7B | ~1.05 GB | `LiquidAI/LFM3-1.7B-GGUF` | [LFM Open License v1.0](https://huggingface.co/LiquidAI/LFM3-1.7B/blob/main/LICENSE) |
 
 Each model is downloaded from Hugging Face on demand and is governed by its own
 license/usage terms, linked above.

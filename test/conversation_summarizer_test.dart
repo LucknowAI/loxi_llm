@@ -43,6 +43,15 @@ void main() {
       expect(seen, contains('Assistant: hi there'));
     });
 
+    test('keeps the existing summary when the model returns nothing', () async {
+      final s = ConversationSummarizer(generate: (_) async => '   ');
+      final out = await s.summarize(
+        existingSummary: 'prior summary',
+        newMessages: [_msg(MessageRole.user, 'hello')],
+      );
+      expect(out, 'prior summary');
+    });
+
     test('notes when there is no prior summary', () async {
       String? seen;
       final s = ConversationSummarizer(generate: (i) async {

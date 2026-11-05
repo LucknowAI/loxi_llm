@@ -7,8 +7,8 @@ import 'package:loki_llm/features/models/presentation/models_notifier.dart';
 
 void main() {
   group('kCuratedModels catalog', () {
-    test('contains exactly 5 models', () {
-      expect(kCuratedModels.length, equals(5));
+    test('contains exactly 6 models', () {
+      expect(kCuratedModels.length, equals(6));
     });
 
     test('all models have unique IDs', () {
@@ -55,6 +55,15 @@ void main() {
       final url = huggingFaceDownloadUrl(phi3);
       expect(url, contains('bartowski/Phi-3-mini-4k-instruct-GGUF'));
       expect(url, contains('Q4_K_M.gguf'));
+    });
+
+    test('LFM3 1.7B URL points at the QAD Q4_0 file', () {
+      final lfm3 = kCuratedModels.firstWhere((m) => m.id == 'lfm3-1.7b');
+      expect(
+        huggingFaceDownloadUrl(lfm3),
+        equals('https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF/resolve/main/LFM3-1.7B-QAD-Q4_0.gguf'),
+      );
+      expect(isMultimodalModel(lfm3), isFalse);
     });
   });
 
@@ -148,7 +157,7 @@ void main() {
         catalog: kCuratedModels,
       );
 
-      expect(missing.map((m) => m.id).toSet(), equals({'gemma4-e2b-it', 'gemma4-e4b-it'}));
+      expect(missing.map((m) => m.id).toSet(), equals({'gemma4-e2b-it', 'gemma4-e4b-it', 'lfm3-1.7b'}));
     });
 
     test('returns nothing when every catalog id already exists', () {

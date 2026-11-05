@@ -70,6 +70,22 @@ Assistant: Paris.
 Human: And its population?
 Assistant: ''');
     });
+
+    test('LFM3 writes BOS + ChatML turns with thinking off', () {
+      final out =
+          const ChatTemplate(ChatTemplateKind.lfm3).format(turns, system);
+      expect(out, '''
+<|startoftext|><|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+What is the capital of France?<|im_end|>
+<|im_start|>assistant
+<think></think>Paris.<|im_end|>
+<|im_start|>user
+And its population?<|im_end|>
+<|im_start|>assistant
+<think></think>''');
+    });
   });
 
   group('Empty system prompt emits no scaffolding', () {
@@ -84,6 +100,10 @@ Assistant: ''');
     test('Llama 3.2', () {
       final out = const ChatTemplate(ChatTemplateKind.llama3).format(turns, '');
       expect(out, isNot(contains('system<|end_header_id|>')));
+    });
+    test('LFM3', () {
+      final out = const ChatTemplate(ChatTemplateKind.lfm3).format(turns, '');
+      expect(out.startsWith('<|startoftext|><|im_start|>user\n'), isTrue);
     });
   });
 
@@ -140,6 +160,10 @@ Assistant: ''');
       expect(const ChatTemplate(ChatTemplateKind.llama3).stopSequences,
           const ['<|eot_id|>']);
     });
+    test('lfm3', () {
+      expect(const ChatTemplate(ChatTemplateKind.lfm3).stopSequences,
+          const ['<|im_end|>']);
+    });
     test('generic', () {
       expect(const ChatTemplate(ChatTemplateKind.generic).stopSequences,
           const ['\nHuman:', '\nUser:']);
@@ -154,6 +178,7 @@ Assistant: ''');
           ChatTemplateKind.phi3);
       expect(ChatTemplate.forModelId('llama32-3b-q4km').kind,
           ChatTemplateKind.llama3);
+      expect(ChatTemplate.forModelId('lfm3-1.7b').kind, ChatTemplateKind.lfm3);
     });
     test('future gemma-4 still routes to gemma', () {
       expect(
@@ -169,6 +194,40 @@ Assistant: ''');
       expect(ChatTemplate.forModelId('mystery-model').kind,
           ChatTemplateKind.generic);
       expect(ChatTemplate.forModelId('').kind, ChatTemplateKind.generic);
+    });
+  });
+
+  group('visibleReply', () {
+    const lfm3 = ChatTemplate(ChatTemplateKind.lfm3);
+
+    test('LFM3 keeps only the text after a stray </think>', () {
+      expect(lfm3.visibleReply('Walrus.</think>Panda.'), 'Panda.');
+    });
+    test('LFM3 drops a full reasoning block', () {
+      expect(lfm3.visibleReply('<think>Let me see.</think>\nParis.'), 'Paris.');
+    });
+    test('LFM3 drops unfinished reasoning cut off by the token limit', () {
+      expect(lfm3.visibleReply('<think>We need to count words'), '');
+    });
+    test('LFM3 leaves a plain reply alone', () {
+      expect(lfm3.visibleReply('Paris.'), 'Paris.');
+    });
+    test('other templates return the raw reply unchanged', () {
+      const raw = 'Walrus.</think>Panda.';
+      expect(const ChatTemplate(ChatTemplateKind.gemma).visibleReply(raw), raw);
+    });
+  });
+
+  group('summaryPrefill', () {
+    test('LFM3 starts its summary reply so it cannot open a think block', () {
+      expect(const ChatTemplate(ChatTemplateKind.lfm3).summaryPrefill, 'Summary:');
+    });
+
+    test('other models are left unchanged', () {
+      for (final kind in ChatTemplateKind.values) {
+        if (kind == ChatTemplateKind.lfm3) continue;
+        expect(ChatTemplate(kind).summaryPrefill, isEmpty);
+      }
     });
   });
 

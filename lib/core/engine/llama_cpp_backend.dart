@@ -6,6 +6,12 @@ import 'inference_backend.dart';
 /// [LlamaEngine.instance] is a singleton — only one GGUF model can be loaded at
 /// a time. [unloadModel] must be called before loading a new model.
 final class LlamaCppBackend extends InferenceBackend {
+  /// [temperature] defaults to the app-wide value; a model family with its
+  /// own recommended temperature gets it from [backendForModel].
+  LlamaCppBackend({this.temperature = 0.7});
+
+  final double temperature;
+
   final _llama = LlamaEngine.instance;
 
   @override
@@ -51,12 +57,11 @@ final class LlamaCppBackend extends InferenceBackend {
   // matches what [generate] actually uses. topP/topK/repeatPenalty fall back to
   // GenerationParams defaults (0.95 / 40 / 1.1).
   static const int _maxTokens = 512;
-  static const double _temperature = 0.7;
 
   @override
-  Map<String, Object?> get generationParams => const {
+  Map<String, Object?> get generationParams => {
         'maxTokens': _maxTokens,
-        'temperature': _temperature,
+        'temperature': temperature,
         'topP': 0.95,
         'topK': 40,
         'repeatPenalty': 1.1,
@@ -75,7 +80,7 @@ final class LlamaCppBackend extends InferenceBackend {
       GenerationParams(
         prompt: prompt,
         maxTokens: _maxTokens,
-        temperature: _temperature,
+        temperature: temperature,
         stopSequences: stopSequences,
         grammar: grammar,
         imagePaths: imagePaths,
