@@ -28,6 +28,7 @@ class ModelsScreen extends ConsumerWidget {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('$name loaded — ready to chat'),
+                persist: false,
                 action: SnackBarAction(
                   label: 'Open Chat',
                   onPressed: () => context.go('/chat'),
