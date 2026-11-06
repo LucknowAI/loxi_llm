@@ -32,6 +32,24 @@ void main() {
     }
   });
 
+  testWidgets('streaming reply has no fade mask over the bubble',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            content: 'A reply that is still streaming',
+            isUser: false,
+            isStreaming: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byType(ShaderMask), findsNothing);
+  });
+
   testWidgets('renders attached image above text when imagePath is set',
       (tester) async {
     await tester.pumpWidget(

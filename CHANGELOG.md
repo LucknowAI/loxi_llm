@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Streaming replies no longer blur at the bottom of the bubble; new text fades in from left to right ([#97](https://github.com/LucknowAI/loki_llm/issues/97))
+
 ## [1.2.0] — 2026-09-16
 
 ### Added
