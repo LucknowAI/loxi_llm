@@ -227,12 +227,27 @@ class ChatNotifier extends _$ChatNotifier {
     // look pre-persist to the caller despite msgRepo.save() above having
     // already run. See priorMessagesFor for how `current` is built now.
     try {
-      // Update conversation title if this is the first message
+      // First message sets the title. Every send records the model that
+      // answered, so the list can show its name instead of "No model".
+      final loadedModel =
+          ref.read(inferenceNotifierProvider.notifier).loadedModel;
       final conversation = convRepo.getById(conversationId);
-      if (conversation != null && conversation.title == 'New conversation') {
-        final title = firstMessageTitle(userText);
-        convRepo.save(conversation.copyWith(title: title, updatedAtMs: now));
-        ref.invalidate(conversationListNotifierProvider);
+      if (conversation != null) {
+        final loadedId = loadedModel?.id ?? '';
+        final nextTitle = conversation.title == 'New conversation'
+            ? firstMessageTitle(userText)
+            : conversation.title;
+        final nextModelId =
+            loadedId.isNotEmpty ? loadedId : conversation.modelId;
+        if (nextTitle != conversation.title ||
+            nextModelId != conversation.modelId) {
+          convRepo.save(conversation.copyWith(
+            title: nextTitle,
+            modelId: nextModelId,
+            updatedAtMs: now,
+          ));
+          ref.invalidate(conversationListNotifierProvider);
+        }
       }
 
       // Update UI with user message + signal streaming start. See
@@ -256,7 +271,6 @@ class ChatNotifier extends _$ChatNotifier {
       // (the persisted ModelStatus.loaded flag is reset on startup, and
       // conversation.modelId is often empty). Precedence: loaded → conversation →
       // generic fallback.
-      final loadedModel = ref.read(inferenceNotifierProvider.notifier).loadedModel;
       final modelName = loadedModel?.name ?? 'unknown';
       final modelId = loadedModel?.id ?? (conversation?.modelId ?? '');
       final template = ChatTemplate.forModelId(modelId);
