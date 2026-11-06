@@ -202,7 +202,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(3, 1451929269734712640),
     name: 'MessageEntity',
-    lastPropertyId: const obx_int.IdUid(7, 4538193868689740854),
+    lastPropertyId: const obx_int.IdUid(13, 5508561535392116950),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -246,6 +246,30 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(7, 4538193868689740854),
         name: 'imagePath',
         type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(10, 4332042718994592144),
+        name: 'timeToFirstTokenMs',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(11, 6621636176657233814),
+        name: 'tokenCount',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(12, 1466670240106269675),
+        name: 'totalDurationMs',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(13, 5508561535392116950),
+        name: 'replyWaitMs',
+        type: 6,
         flags: 0,
       ),
     ],
@@ -399,7 +423,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
     lastSequenceId: const obx_int.IdUid(0, 0),
     retiredEntityUids: const [],
     retiredIndexUids: const [],
-    retiredPropertyUids: const [],
+    retiredPropertyUids: const [4156372887139994263, 6917146476088740194],
     retiredRelationUids: const [],
     modelVersion: 5,
     modelVersionParserMinimum: 5,
@@ -620,7 +644,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final imagePathOffset = object.imagePath == null
             ? null
             : fbb.writeString(object.imagePath!);
-        fbb.startTable(8);
+        fbb.startTable(14);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, conversationIdOffset);
         fbb.addOffset(2, messageIdOffset);
@@ -628,6 +652,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addOffset(4, contentOffset);
         fbb.addInt64(5, object.createdAtMs);
         fbb.addOffset(6, imagePathOffset);
+        fbb.addInt64(9, object.timeToFirstTokenMs);
+        fbb.addInt64(10, object.tokenCount);
+        fbb.addInt64(11, object.totalDurationMs);
+        fbb.addInt64(12, object.replyWaitMs);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -657,7 +685,27 @@ obx_int.ModelDefinition getObjectBoxModel() {
           )
           ..imagePath = const fb.StringReader(
             asciiOptimization: true,
-          ).vTableGetNullable(buffer, rootOffset, 16);
+          ).vTableGetNullable(buffer, rootOffset, 16)
+          ..timeToFirstTokenMs = const fb.Int64Reader().vTableGetNullable(
+            buffer,
+            rootOffset,
+            22,
+          )
+          ..tokenCount = const fb.Int64Reader().vTableGetNullable(
+            buffer,
+            rootOffset,
+            24,
+          )
+          ..totalDurationMs = const fb.Int64Reader().vTableGetNullable(
+            buffer,
+            rootOffset,
+            26,
+          )
+          ..replyWaitMs = const fb.Int64Reader().vTableGetNullable(
+            buffer,
+            rootOffset,
+            28,
+          );
 
         return object;
       },
@@ -952,6 +1000,26 @@ class MessageEntity_ {
   /// See [MessageEntity.imagePath].
   static final imagePath = obx.QueryStringProperty<MessageEntity>(
     _entities[2].properties[6],
+  );
+
+  /// See [MessageEntity.timeToFirstTokenMs].
+  static final timeToFirstTokenMs = obx.QueryIntegerProperty<MessageEntity>(
+    _entities[2].properties[7],
+  );
+
+  /// See [MessageEntity.tokenCount].
+  static final tokenCount = obx.QueryIntegerProperty<MessageEntity>(
+    _entities[2].properties[8],
+  );
+
+  /// See [MessageEntity.totalDurationMs].
+  static final totalDurationMs = obx.QueryIntegerProperty<MessageEntity>(
+    _entities[2].properties[9],
+  );
+
+  /// See [MessageEntity.replyWaitMs].
+  static final replyWaitMs = obx.QueryIntegerProperty<MessageEntity>(
+    _entities[2].properties[10],
   );
 }
 

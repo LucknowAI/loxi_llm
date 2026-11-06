@@ -14,6 +14,10 @@ _$MessageImpl _$$MessageImplFromJson(Map<String, dynamic> json) =>
       content: json['content'] as String,
       createdAtMs: (json['createdAtMs'] as num).toInt(),
       imagePath: json['imagePath'] as String?,
+      tokenCount: (json['tokenCount'] as num?)?.toInt(),
+      timeToFirstTokenMs: (json['timeToFirstTokenMs'] as num?)?.toInt(),
+      totalDurationMs: (json['totalDurationMs'] as num?)?.toInt(),
+      replyWaitMs: (json['replyWaitMs'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _$$MessageImplToJson(_$MessageImpl instance) =>
@@ -24,6 +28,10 @@ Map<String, dynamic> _$$MessageImplToJson(_$MessageImpl instance) =>
       'content': instance.content,
       'createdAtMs': instance.createdAtMs,
       'imagePath': instance.imagePath,
+      'tokenCount': instance.tokenCount,
+      'timeToFirstTokenMs': instance.timeToFirstTokenMs,
+      'totalDurationMs': instance.totalDurationMs,
+      'replyWaitMs': instance.replyWaitMs,
     };
 
 const _$MessageRoleEnumMap = {
