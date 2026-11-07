@@ -8,6 +8,7 @@
 // a lock-free stop flag.
 
 #include <jni.h>
+#include <dlfcn.h>
 #include <string>
 #include <vector>
 #include <mutex>
@@ -34,6 +35,17 @@ static llama_sampler* g_grammar = nullptr;  // lazy GBNF grammar, applied separa
 static mtmd_context* g_mtmd_ctx = nullptr;  // vision projector, null when no mmproj was loaded
 static std::mutex g_mutex;
 static std::atomic<bool> g_should_stop{false};
+
+// The app's native lib folder (where our .so lives): ggml scans it for libggml-cpu-*.so.
+static std::string nativeLibDir() {
+    Dl_info info;
+    if (dladdr((void*) &nativeLibDir, &info) && info.dli_fname) {
+        const std::string p(info.dli_fname);
+        const size_t slash = p.rfind('/');
+        if (slash != std::string::npos) return p.substr(0, slash);
+    }
+    return "";
+}
 
 // Persistent per-generation streaming state.
 struct GenState {
@@ -244,7 +256,9 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeInitModel(
     if (g_model) { llama_free_model(g_model); g_model = nullptr; }
     g_gen.reset();
 
-    ggml_backend_load_all();
+    const std::string lib_dir = nativeLibDir();
+    if (lib_dir.empty()) ggml_backend_load_all();
+    else ggml_backend_load_all_from_path(lib_dir.c_str());
 
     const char* path = env->GetStringUTFChars(model_path, nullptr);
     LOGI("Loading model: %s (threads=%d ctx=%d batch=%d)", path, n_threads, context_size, batch_size);

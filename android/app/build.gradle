@@ -28,6 +28,12 @@ android {
         jvmTarget = JavaVersion.VERSION_17
     }
 
+    packaging {
+        // ggml scans the native lib folder for libggml-cpu-*.so, so the libs must be
+        // real files on disk, not mapped from inside the APK.
+        jniLibs { useLegacyPackaging = true }
+    }
+
     defaultConfig {
         applicationId = "com.abhisheksahu.lokillm"
         minSdk = flutter.minSdkVersion
