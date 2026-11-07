@@ -28,6 +28,16 @@ mixin _$Message {
       throw _privateConstructorUsedError; // DateTime.now().millisecondsSinceEpoch
   String? get imagePath => throw _privateConstructorUsedError;
 
+  /// Same model-call numbers as the Model I/O log line for this reply.
+  /// Null on older messages and on user turns.
+  int? get tokenCount => throw _privateConstructorUsedError;
+  int? get timeToFirstTokenMs => throw _privateConstructorUsedError;
+  int? get totalDurationMs => throw _privateConstructorUsedError;
+
+  /// Send until the reply was saved, including a summary or tool calls.
+  /// [totalDurationMs] stays the model call, which is what tok/s uses.
+  int? get replyWaitMs => throw _privateConstructorUsedError;
+
   /// Serializes this Message to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
 
@@ -48,7 +58,11 @@ abstract class $MessageCopyWith<$Res> {
       MessageRole role,
       String content,
       int createdAtMs,
-      String? imagePath});
+      String? imagePath,
+      int? tokenCount,
+      int? timeToFirstTokenMs,
+      int? totalDurationMs,
+      int? replyWaitMs});
 }
 
 /// @nodoc
@@ -72,6 +86,10 @@ class _$MessageCopyWithImpl<$Res, $Val extends Message>
     Object? content = null,
     Object? createdAtMs = null,
     Object? imagePath = freezed,
+    Object? tokenCount = freezed,
+    Object? timeToFirstTokenMs = freezed,
+    Object? totalDurationMs = freezed,
+    Object? replyWaitMs = freezed,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -98,6 +116,22 @@ class _$MessageCopyWithImpl<$Res, $Val extends Message>
           ? _value.imagePath
           : imagePath // ignore: cast_nullable_to_non_nullable
               as String?,
+      tokenCount: freezed == tokenCount
+          ? _value.tokenCount
+          : tokenCount // ignore: cast_nullable_to_non_nullable
+              as int?,
+      timeToFirstTokenMs: freezed == timeToFirstTokenMs
+          ? _value.timeToFirstTokenMs
+          : timeToFirstTokenMs // ignore: cast_nullable_to_non_nullable
+              as int?,
+      totalDurationMs: freezed == totalDurationMs
+          ? _value.totalDurationMs
+          : totalDurationMs // ignore: cast_nullable_to_non_nullable
+              as int?,
+      replyWaitMs: freezed == replyWaitMs
+          ? _value.replyWaitMs
+          : replyWaitMs // ignore: cast_nullable_to_non_nullable
+              as int?,
     ) as $Val);
   }
 }
@@ -115,7 +149,11 @@ abstract class _$$MessageImplCopyWith<$Res> implements $MessageCopyWith<$Res> {
       MessageRole role,
       String content,
       int createdAtMs,
-      String? imagePath});
+      String? imagePath,
+      int? tokenCount,
+      int? timeToFirstTokenMs,
+      int? totalDurationMs,
+      int? replyWaitMs});
 }
 
 /// @nodoc
@@ -137,6 +175,10 @@ class __$$MessageImplCopyWithImpl<$Res>
     Object? content = null,
     Object? createdAtMs = null,
     Object? imagePath = freezed,
+    Object? tokenCount = freezed,
+    Object? timeToFirstTokenMs = freezed,
+    Object? totalDurationMs = freezed,
+    Object? replyWaitMs = freezed,
   }) {
     return _then(_$MessageImpl(
       id: null == id
@@ -163,6 +205,22 @@ class __$$MessageImplCopyWithImpl<$Res>
           ? _value.imagePath
           : imagePath // ignore: cast_nullable_to_non_nullable
               as String?,
+      tokenCount: freezed == tokenCount
+          ? _value.tokenCount
+          : tokenCount // ignore: cast_nullable_to_non_nullable
+              as int?,
+      timeToFirstTokenMs: freezed == timeToFirstTokenMs
+          ? _value.timeToFirstTokenMs
+          : timeToFirstTokenMs // ignore: cast_nullable_to_non_nullable
+              as int?,
+      totalDurationMs: freezed == totalDurationMs
+          ? _value.totalDurationMs
+          : totalDurationMs // ignore: cast_nullable_to_non_nullable
+              as int?,
+      replyWaitMs: freezed == replyWaitMs
+          ? _value.replyWaitMs
+          : replyWaitMs // ignore: cast_nullable_to_non_nullable
+              as int?,
     ));
   }
 }
@@ -176,7 +234,11 @@ class _$MessageImpl extends _Message {
       required this.role,
       required this.content,
       required this.createdAtMs,
-      this.imagePath})
+      this.imagePath,
+      this.tokenCount,
+      this.timeToFirstTokenMs,
+      this.totalDurationMs,
+      this.replyWaitMs})
       : super._();
 
   factory _$MessageImpl.fromJson(Map<String, dynamic> json) =>
@@ -196,9 +258,23 @@ class _$MessageImpl extends _Message {
   @override
   final String? imagePath;
 
+  /// Same model-call numbers as the Model I/O log line for this reply.
+  /// Null on older messages and on user turns.
+  @override
+  final int? tokenCount;
+  @override
+  final int? timeToFirstTokenMs;
+  @override
+  final int? totalDurationMs;
+
+  /// Send until the reply was saved, including a summary or tool calls.
+  /// [totalDurationMs] stays the model call, which is what tok/s uses.
+  @override
+  final int? replyWaitMs;
+
   @override
   String toString() {
-    return 'Message(id: $id, conversationId: $conversationId, role: $role, content: $content, createdAtMs: $createdAtMs, imagePath: $imagePath)';
+    return 'Message(id: $id, conversationId: $conversationId, role: $role, content: $content, createdAtMs: $createdAtMs, imagePath: $imagePath, tokenCount: $tokenCount, timeToFirstTokenMs: $timeToFirstTokenMs, totalDurationMs: $totalDurationMs, replyWaitMs: $replyWaitMs)';
   }
 
   @override
@@ -214,13 +290,31 @@ class _$MessageImpl extends _Message {
             (identical(other.createdAtMs, createdAtMs) ||
                 other.createdAtMs == createdAtMs) &&
             (identical(other.imagePath, imagePath) ||
-                other.imagePath == imagePath));
+                other.imagePath == imagePath) &&
+            (identical(other.tokenCount, tokenCount) ||
+                other.tokenCount == tokenCount) &&
+            (identical(other.timeToFirstTokenMs, timeToFirstTokenMs) ||
+                other.timeToFirstTokenMs == timeToFirstTokenMs) &&
+            (identical(other.totalDurationMs, totalDurationMs) ||
+                other.totalDurationMs == totalDurationMs) &&
+            (identical(other.replyWaitMs, replyWaitMs) ||
+                other.replyWaitMs == replyWaitMs));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   int get hashCode => Object.hash(
-      runtimeType, id, conversationId, role, content, createdAtMs, imagePath);
+      runtimeType,
+      id,
+      conversationId,
+      role,
+      content,
+      createdAtMs,
+      imagePath,
+      tokenCount,
+      timeToFirstTokenMs,
+      totalDurationMs,
+      replyWaitMs);
 
   /// Create a copy of Message
   /// with the given fields replaced by the non-null parameter values.
@@ -245,7 +339,11 @@ abstract class _Message extends Message {
       required final MessageRole role,
       required final String content,
       required final int createdAtMs,
-      final String? imagePath}) = _$MessageImpl;
+      final String? imagePath,
+      final int? tokenCount,
+      final int? timeToFirstTokenMs,
+      final int? totalDurationMs,
+      final int? replyWaitMs}) = _$MessageImpl;
   const _Message._() : super._();
 
   factory _Message.fromJson(Map<String, dynamic> json) = _$MessageImpl.fromJson;
@@ -262,6 +360,20 @@ abstract class _Message extends Message {
   int get createdAtMs; // DateTime.now().millisecondsSinceEpoch
   @override
   String? get imagePath;
+
+  /// Same model-call numbers as the Model I/O log line for this reply.
+  /// Null on older messages and on user turns.
+  @override
+  int? get tokenCount;
+  @override
+  int? get timeToFirstTokenMs;
+  @override
+  int? get totalDurationMs;
+
+  /// Send until the reply was saved, including a summary or tool calls.
+  /// [totalDurationMs] stays the model call, which is what tok/s uses.
+  @override
+  int? get replyWaitMs;
 
   /// Create a copy of Message
   /// with the given fields replaced by the non-null parameter values.

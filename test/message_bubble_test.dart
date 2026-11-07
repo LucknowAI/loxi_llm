@@ -32,6 +32,24 @@ void main() {
     }
   });
 
+  testWidgets('streaming reply has no fade mask over the bubble',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            content: 'A reply that is still streaming',
+            isUser: false,
+            isStreaming: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byType(ShaderMask), findsNothing);
+  });
+
   testWidgets('renders attached image above text when imagePath is set',
       (tester) async {
     await tester.pumpWidget(
@@ -153,5 +171,32 @@ void main() {
 
     expect(find.text('**stars**', findRichText: true), findsNothing);
     expect(find.textContaining('stars', findRichText: true), findsOneWidget);
+  });
+
+  test('reply stats label uses model-call speed and the whole wait', () {
+    final both = replyStats(
+      tokenCount: 5,
+      totalDurationMs: 5000,
+      timeToFirstTokenMs: 1000,
+      replyWaitMs: 8000,
+    );
+    expect(both?.speed, '1.0 tok/s');
+    expect(both?.time, '8.0 s');
+    final one = replyStats(
+      tokenCount: 1,
+      totalDurationMs: 5000,
+      timeToFirstTokenMs: 1000,
+      replyWaitMs: 5000,
+    );
+    expect(one?.speed, isNull);
+    expect(one?.time, '5.0 s');
+    expect(
+      replyStats(
+        tokenCount: null,
+        totalDurationMs: null,
+        timeToFirstTokenMs: null,
+      ),
+      isNull,
+    );
   });
 }

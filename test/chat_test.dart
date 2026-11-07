@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loki_llm/core/engine/chat_template.dart';
 import 'package:loki_llm/features/chat/domain/conversation.dart';
@@ -306,6 +308,22 @@ void main() {
       const state = ChatState(messages: [], streamingText: 'old');
       final updated = state.copyWith(streamingText: 'new');
       expect(updated.streamingText, equals('new'));
+    });
+  });
+
+  group('failedGenerationState', () {
+    const streaming = ChatState(messages: [], streamingText: 'partial');
+
+    test('timeout goes back to idle with a friendly message', () {
+      final state = failedGenerationState(streaming, TimeoutException('60s'));
+      expect(state.isStreaming, isFalse);
+      expect(state.error, 'The model took too long to respond.');
+    });
+
+    test('any other error shows the error text', () {
+      final state = failedGenerationState(streaming, StateError('boom'));
+      expect(state.isStreaming, isFalse);
+      expect(state.error, 'Error: Bad state: boom');
     });
   });
 }

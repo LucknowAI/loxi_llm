@@ -27,12 +27,15 @@ part 'chat_notifier.g.dart';
 
 /// UI state for a single conversation.
 class ChatState {
-  const ChatState({required this.messages, this.streamingText});
+  const ChatState({required this.messages, this.streamingText, this.error});
 
   final List<Message> messages;
 
   /// Non-null during active streaming; null when idle.
   final String? streamingText;
+
+  /// Short message from the last failed generation; the screen shows it once.
+  final String? error;
 
   bool get isStreaming => streamingText != null;
 
@@ -40,14 +43,28 @@ class ChatState {
     List<Message>? messages,
     String? streamingText,
     bool clearStreaming = false,
+    String? error,
   }) {
     return ChatState(
       messages: messages ?? this.messages,
       streamingText:
           clearStreaming ? null : (streamingText ?? this.streamingText),
+      error: error ?? this.error,
     );
   }
 }
+
+/// The chat state after a generation fails: back to idle, messages kept, and
+/// a short message for the user. A plain `AsyncError` can't do this job —
+/// Riverpod keeps the previous value inside it, so `isStreaming` stayed true,
+/// the Stop button stayed up, and the composer stayed locked.
+ChatState failedGenerationState(ChatState current, Object error) =>
+    current.copyWith(
+      clearStreaming: true,
+      error: error is TimeoutException
+          ? 'The model took too long to respond.'
+          : 'Error: $error',
+    );
 
 /// Whether [ChatNotifier.send] should proceed — either non-empty text or an
 /// attached image is required (image-only sends are allowed).
@@ -110,14 +127,13 @@ List<ChatTurn> historyTurnsForPrompt(
 /// Messages to seed a new turn's [ChatState] with, recovering from
 /// [fetchFromRepo] when [currentMessages] is unusable.
 ///
-/// `state.valueOrNull` is null right after a previous turn's generation
-/// failed — [ChatNotifier]'s stream `onError` and the agent loop's catch
-/// both set `state` to a plain `AsyncError` with no previous value attached.
-/// Without this fallback, [ChatNotifier.send] reading `state.requireValue`
-/// would throw that stale error before the new message ever got a chance to
-/// generate a response — and since nothing ever moves `state` back to
-/// `AsyncData` on its own, every later send in the conversation would fail
-/// the exact same way.
+/// `state.valueOrNull` is null if the notifier is sitting in an `AsyncError`
+/// with no previous value (e.g. loading the messages failed). Without this
+/// fallback, [ChatNotifier.send] reading `state.requireValue` would throw that
+/// stale error before the new message ever got a chance to generate a
+/// response — and since nothing ever moves `state` back to `AsyncData` on its
+/// own, every later send in the conversation would fail the exact same way.
+/// A failed generation no longer lands here: see [failedGenerationState].
 ///
 /// [fetchFromRepo] is only called when needed (never on the common
 /// success path) and its result already includes [excludingMessageId] — the
@@ -310,6 +326,7 @@ class ChatNotifier extends _$ChatNotifier {
             ragChunks: ragChunks,
             imageMarker: imageMarker,
             imagePaths: generationImagePaths,
+            waitStartMs: now,
           );
           return;
         }
@@ -354,7 +371,11 @@ class ChatNotifier extends _$ChatNotifier {
       final genStartMs = DateTime.now().millisecondsSinceEpoch;
       int? firstTokenMs;
 
-      void recordIo(TraceOutcome outcome, {String? error}) {
+      void recordIo(
+        TraceOutcome outcome,
+        int totalDurationMs, {
+        String? error,
+      }) {
         if (!captureIo) return;
         ioLogger.record(ModelIoTrace(
           timestampMs: genStartMs,
@@ -368,7 +389,7 @@ class ChatNotifier extends _$ChatNotifier {
           outputText: buffer.toString(),
           tokenCount: tokenCount,
           timeToFirstTokenMs: firstTokenMs,
-          totalDurationMs: DateTime.now().millisecondsSinceEpoch - genStartMs,
+          totalDurationMs: totalDurationMs,
           outcome: outcome,
           error: error,
         ));
@@ -407,14 +428,22 @@ class ChatNotifier extends _$ChatNotifier {
           log.info(_logTag,
               'generation ${_stopRequested ? 'stopped' : 'done'}: '
               '$tokenCount tokens, ${buffer.length} chars');
-          recordIo(_stopRequested ? TraceOutcome.stopped : TraceOutcome.done);
           final assistantMs = DateTime.now().millisecondsSinceEpoch;
+          final totalDurationMs = assistantMs - genStartMs;
+          recordIo(
+            _stopRequested ? TraceOutcome.stopped : TraceOutcome.done,
+            totalDurationMs,
+          );
           final assistantMsg = Message(
             id: 'msg-$assistantMs',
             conversationId: conversationId,
             role: MessageRole.assistant,
             content: template.visibleReply(buffer.toString()),
             createdAtMs: assistantMs,
+            tokenCount: tokenCount,
+            timeToFirstTokenMs: firstTokenMs,
+            totalDurationMs: totalDurationMs,
+            replyWaitMs: assistantMs - now,
           );
           msgRepo.save(assistantMsg);
 
@@ -434,6 +463,7 @@ class ChatNotifier extends _$ChatNotifier {
               .error(_logTag, 'generation error after $tokenCount tokens', e, st);
           recordIo(
             e is TimeoutException ? TraceOutcome.timeout : TraceOutcome.error,
+            DateTime.now().millisecondsSinceEpoch - genStartMs,
             error: e.toString(),
           );
           // A client-side timeout only stops the Dart listener — the native
@@ -457,15 +487,13 @@ class ChatNotifier extends _$ChatNotifier {
             }
           }
           if (myGeneration != _generation) return;
-          state = AsyncError(e, st);
+          state = AsyncData(failedGenerationState(state.requireValue, e));
         },
         cancelOnError: true,
       );
     } catch (e, st) {
       log.error(_logTag, 'send() failed after persist, clearing streaming', e, st);
-      if (state.valueOrNull != null) {
-        state = AsyncData(state.requireValue.copyWith(clearStreaming: true));
-      }
+      _updateState((s) => s.copyWith(clearStreaming: true));
       // throwWithStackTrace rather than a plain throw so the wrapper's stack
       // trace still points at where [e] actually originated, not just this
       // catch block.
@@ -478,6 +506,13 @@ class ChatNotifier extends _$ChatNotifier {
   /// the model's context window (the native backend hard-truncates beyond
   /// this, but windowing here preserves the system prompt + RAG context).
   static const int _maxHistoryMessages = 20;
+
+  /// Applies [update] to the current [ChatState], or does nothing when state
+  /// holds no value (loading or error), e.g. after a previous turn errored.
+  void _updateState(ChatState Function(ChatState) update) {
+    final current = state.valueOrNull;
+    if (current != null) state = AsyncData(update(current));
+  }
 
   /// Stop the in-flight generation. The partial reply already streamed is kept
   /// (the stream's onDone saves it). No-op when nothing is streaming.
@@ -570,6 +605,7 @@ class ChatNotifier extends _$ChatNotifier {
     required List<DocumentChunk> ragChunks,
     String? imageMarker,
     List<String> imagePaths = const [],
+    required int waitStartMs,
   }) async {
     final log = AppLogger.instance;
     final backend = ref.read(inferenceNotifierProvider).valueOrNull;
@@ -581,6 +617,9 @@ class ChatNotifier extends _$ChatNotifier {
     final settings = ref.read(settingsNotifierProvider);
     final embService = ref.read(embeddingServiceProvider).valueOrNull;
     final chunkRepo = ref.read(documentChunkRepositoryProvider);
+    final loadedModel =
+        ref.read(inferenceNotifierProvider.notifier).loadedModel;
+    final ctx = backend.generationParams['contextSize'];
     final registry = buildDefaultToolRegistry(
       ToolRegistryDeps(
         conversationId: conversationId,
@@ -597,6 +636,11 @@ class ChatNotifier extends _$ChatNotifier {
         chunkSize: settings.chunkSize,
         summary: summary,
         historyWindow: _maxHistoryMessages,
+        modelName: loadedModel?.name ?? 'unknown',
+        backendName: backend.runtimeType.toString(),
+        contextSize: ctx is int ? ctx : null,
+        agentCapable: isAgentCapableModel(loadedModel?.id),
+        ragEnabled: ragEnabled,
       ),
       enabledToolNames: settings.enabledToolNames,
     );
@@ -606,12 +650,11 @@ class ChatNotifier extends _$ChatNotifier {
 
     final captureIo = settings.modelIoLoggingEnabled;
     var agentIteration = 0;
+    int? answerTokens;
+    int? answerTtftMs;
+    int? answerDurationMs;
 
-    if (state.valueOrNull != null) {
-      state = AsyncData(
-        state.requireValue.copyWith(streamingText: 'Thinking…'),
-      );
-    }
+    _updateState((s) => s.copyWith(streamingText: 'Thinking…'));
 
     // One model call, streamed:
     Stream<String> generateStream(List<ChatTurn> turns) async* {
@@ -630,6 +673,7 @@ class ChatNotifier extends _$ChatNotifier {
       final startMs = DateTime.now().millisecondsSinceEpoch;
       final buffer = StringBuffer();
       var tokens = 0;
+      int? firstTokenMs;
       // Every agent iteration that carries an image re-runs vision encoding
       // (no KV-cache reuse across generate() calls — see the plain path's
       // generationTimeout comment), so it needs the same generous headroom.
@@ -644,10 +688,18 @@ class ChatNotifier extends _$ChatNotifier {
             imagePaths: imagePaths,
           )
           .timeout(iterationTimeout)) {
+        if (tokens == 0) {
+          firstTokenMs =
+              DateTime.now().millisecondsSinceEpoch - startMs;
+        }
         buffer.write(token);
         tokens++;
         yield token;
       }
+      answerTokens = tokens;
+      answerTtftMs = firstTokenMs;
+      final totalDurationMs = DateTime.now().millisecondsSinceEpoch - startMs;
+      answerDurationMs = totalDurationMs;
       if (captureIo) {
         ModelIoLogger.instance.record(ModelIoTrace(
           timestampMs: startMs,
@@ -660,8 +712,8 @@ class ChatNotifier extends _$ChatNotifier {
           ragChunks: ragChunkTexts,
           outputText: buffer.toString(),
           tokenCount: tokens,
-          timeToFirstTokenMs: null,
-          totalDurationMs: DateTime.now().millisecondsSinceEpoch - startMs,
+          timeToFirstTokenMs: firstTokenMs,
+          totalDurationMs: totalDurationMs,
           outcome:
               _stopRequested ? TraceOutcome.stopped : TraceOutcome.done,
           agentIteration: iteration,
@@ -676,19 +728,12 @@ class ChatNotifier extends _$ChatNotifier {
       registry: registry,
       isCancelled: () => _stopRequested,
       onToolCall: (toolName) {
-        if (state.valueOrNull != null) {
-          state = AsyncData(
-            state.requireValue.copyWith(streamingText: 'Using $toolName…'),
-          );
-        }
+        _updateState((s) => s.copyWith(streamingText: 'Using $toolName…'));
       },
       onAnswerToken: (token) {
         answerBuffer.write(token);
-        if (state.valueOrNull != null) {
-          state = AsyncData(
-            state.requireValue.copyWith(streamingText: answerBuffer.toString()),
-          );
-        }
+        _updateState(
+            (s) => s.copyWith(streamingText: answerBuffer.toString()));
       },
       onToolResult: (toolName, observation, iteration) {
         if (!captureIo) return;
@@ -719,11 +764,7 @@ class ChatNotifier extends _$ChatNotifier {
           await loop.run(_historyTurns(history, imageMarker: imageMarker));
 
       if (result.stopped && result.answer.isEmpty) {
-        if (state.valueOrNull != null) {
-          state = AsyncData(
-            state.requireValue.copyWith(clearStreaming: true),
-          );
-        }
+        _updateState((s) => s.copyWith(clearStreaming: true));
         log.info(_logTag,
             'agent stopped: ${result.steps.length} tool step(s), no partial answer');
         return;
@@ -736,6 +777,10 @@ class ChatNotifier extends _$ChatNotifier {
         role: MessageRole.assistant,
         content: result.answer,
         createdAtMs: assistantMs,
+        tokenCount: result.hitIterationCap ? null : answerTokens,
+        timeToFirstTokenMs: result.hitIterationCap ? null : answerTtftMs,
+        totalDurationMs: result.hitIterationCap ? null : answerDurationMs,
+        replyWaitMs: assistantMs - waitStartMs,
       );
       ref.read(messageRepositoryProvider).save(assistantMsg);
       final conv = ref.read(conversationRepositoryProvider).getById(conversationId);
@@ -758,7 +803,7 @@ class ChatNotifier extends _$ChatNotifier {
       // See the plain path's onError: a client-side timeout doesn't stop
       // native generation on its own.
       if (e is TimeoutException) backend.stop();
-      state = AsyncError(e, st);
+      state = AsyncData(failedGenerationState(state.requireValue, e));
     }
   }
 

@@ -63,6 +63,10 @@ class MessageRepository {
         content: e.content,
         createdAtMs: e.createdAtMs,
         imagePath: e.imagePath,
+        tokenCount: e.tokenCount,
+        timeToFirstTokenMs: e.timeToFirstTokenMs,
+        totalDurationMs: e.totalDurationMs,
+        replyWaitMs: e.replyWaitMs,
       );
 
   void _updateEntity(MessageEntity e, Message m) {
@@ -72,5 +76,9 @@ class MessageRepository {
     e.content = m.content;
     e.createdAtMs = m.createdAtMs;
     e.imagePath = m.imagePath;
+    e.tokenCount = m.tokenCount;
+    e.timeToFirstTokenMs = m.timeToFirstTokenMs;
+    e.totalDurationMs = m.totalDurationMs;
+    e.replyWaitMs = m.replyWaitMs;
   }
 }
