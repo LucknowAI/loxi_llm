@@ -77,7 +77,11 @@ Do **not** open feature PRs against `main`. Maintainers cut releases by merging
 
 ## Pull request checklist
 
-- [ ] CI passes (`Analyze & test`)
+- [ ] CI passes (`Analyze & test`, `Require linked issue`, `Require milestone`
+      — the latter two are enforced automatically for PRs against `develop`)
+- [ ] Linked to an issue (`Fixes #<n>` in the description, or linked manually
+      in the sidebar)
+- [ ] Milestone set on the PR (copied onto the issue(s) it closes when merged)
 - [ ] `fvm flutter analyze` is clean
 - [ ] Tests added or updated when behavior changes
 - [ ] `build_runner` run if you changed `@freezed`, `@riverpod`, or ObjectBox

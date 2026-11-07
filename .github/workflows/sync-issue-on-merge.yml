@@ -1,0 +1,105 @@
+name: Sync linked issues on merge
+
+# When a PR merges, this does two things for every issue it closes:
+#
+# 1. Closes it, if it's still open. GitHub's own "Fixes #N" auto-close only
+#    fires on a merge into the repo's *default* branch (main) -- but
+#    CONTRIBUTING.md requires contributor PRs to target develop, so without
+#    this, every one of those issues stays open despite being fixed (this
+#    silently happened to 5+ issues before it was caught and fixed manually
+#    -- see docs/RELEASE_PROCESS.md's Phase 2).
+# 2. Copies the PR's milestone onto it, if it doesn't already have one.
+#    "PR Policy" (pr-policy.yml) requires a milestone on every
+#    develop-targeted PR, so this is the normal path issues get milestoned
+#    through; the reopen-and-comment fallback below only fires if that
+#    requirement was somehow bypassed (e.g. an admin override).
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  sync-issues:
+    name: Close and milestone linked issues
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    steps:
+      - name: Close + milestone every issue this PR closes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const prMilestone = pr.milestone;
+            const defaultBranch = context.payload.repository.default_branch;
+
+            const query = `
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    closingIssuesReferences(first: 20) {
+                      nodes { number state milestone { number title } }
+                    }
+                  }
+                }
+              }
+            `;
+            const result = await github.graphql(query, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              number: pr.number,
+            });
+            const issues = result.repository.pullRequest.closingIssuesReferences.nodes;
+
+            for (const issue of issues) {
+              // GitHub already auto-closed this if the PR's base was the
+              // default branch -- only step in when it didn't.
+              if (issue.state === 'OPEN' && pr.base.ref !== defaultBranch) {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  state: 'closed',
+                  state_reason: 'completed',
+                });
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: `Fixed by #${pr.number} (merged into \`${pr.base.ref}\`). Not auto-closed since the PR's base wasn't the repo's default branch (\`${defaultBranch}\`).`,
+                });
+                core.info(`Closed #${issue.number}`);
+              }
+
+              if (issue.milestone) {
+                core.info(`#${issue.number} already has a milestone (${issue.milestone.title}), skipping milestone sync`);
+                continue;
+              }
+
+              if (prMilestone) {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  milestone: prMilestone.number,
+                });
+                core.info(`Set #${issue.number} milestone to ${prMilestone.title}`);
+              } else {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  state: 'open',
+                });
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: `Reopened: this issue was closed by #${pr.number}, but neither the PR nor this issue had a milestone set. Please add one and close it again.`,
+                });
+                core.info(`Reopened #${issue.number} — no milestone available on either side`);
+              }
+            }

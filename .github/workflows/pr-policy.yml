@@ -1,0 +1,72 @@
+name: PR Policy
+
+# Required status checks for PRs into develop (see CLAUDE.md: every piece of
+# implementation work must be tracked by an issue, and docs/RELEASE_PROCESS.md:
+# issues need a milestone to be release-trackable). Release PRs (develop ->
+# main) aren't tied to a single issue, so they're exempted below.
+on:
+  pull_request:
+    types:
+      [opened, edited, synchronize, reopened, ready_for_review, milestoned, demilestoned]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  require-linked-issue:
+    name: Require linked issue
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.base.ref == 'develop'
+    steps:
+      - name: Check for a linked issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // closingIssuesReferences covers both "Fixes #N" in the body AND
+            // an issue linked manually via the PR sidebar. Note: GitHub does
+            // not fire a webhook event for sidebar-only linking, so this
+            // check only re-evaluates on the event types listed above --
+            // a PR linked that way alone needs a manual re-run.
+            const query = `
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    closingIssuesReferences(first: 1) {
+                      totalCount
+                    }
+                  }
+                }
+              }
+            `;
+            const result = await github.graphql(query, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              number: context.payload.pull_request.number,
+            });
+            const count = result.repository.pullRequest.closingIssuesReferences.totalCount;
+            if (count === 0) {
+              core.setFailed(
+                'No linked issue found. Reference one with "Fixes #<n>" / "Closes #<n>" in the PR description, or link one manually in the sidebar (CLAUDE.md: every piece of implementation work must be tracked by an issue).'
+              );
+            } else {
+              core.info(`Linked issue count: ${count}`);
+            }
+
+  require-milestone:
+    name: Require milestone
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.base.ref == 'develop'
+    steps:
+      - name: Check for a milestone
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const milestone = context.payload.pull_request.milestone;
+            if (!milestone) {
+              core.setFailed(
+                'No milestone assigned to this PR. Set one before merging — it gets copied onto every issue this PR closes (see docs/RELEASE_PROCESS.md).'
+              );
+            } else {
+              core.info(`Milestone: ${milestone.title}`);
+            }
