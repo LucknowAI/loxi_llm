@@ -360,6 +360,18 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       ref.read(fileStorageServiceProvider).deleteImage(stale);
     });
 
+    // A failed generation leaves the chat usable (see failedGenerationState);
+    // tell the user once. The next send() starts with no error, so a repeat
+    // failure is shown again.
+    ref.listen(chatNotifierProvider(widget.conversationId), (previous, next) {
+      final error = next.valueOrNull?.error;
+      if (error != null && error != previous?.valueOrNull?.error) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: Colors.red),
+        );
+      }
+    });
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
