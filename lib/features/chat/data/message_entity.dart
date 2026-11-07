@@ -24,5 +24,17 @@ class MessageEntity {
   @Property()
   String? imagePath;
 
+  @Property()
+  int? tokenCount;
+
+  @Property()
+  int? timeToFirstTokenMs;
+
+  @Property()
+  int? totalDurationMs;
+
+  @Property()
+  int? replyWaitMs;
+
   MessageEntity();
 }

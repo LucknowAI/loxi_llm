@@ -326,6 +326,7 @@ class ChatNotifier extends _$ChatNotifier {
             ragChunks: ragChunks,
             imageMarker: imageMarker,
             imagePaths: generationImagePaths,
+            waitStartMs: now,
           );
           return;
         }
@@ -370,7 +371,11 @@ class ChatNotifier extends _$ChatNotifier {
       final genStartMs = DateTime.now().millisecondsSinceEpoch;
       int? firstTokenMs;
 
-      void recordIo(TraceOutcome outcome, {String? error}) {
+      void recordIo(
+        TraceOutcome outcome,
+        int totalDurationMs, {
+        String? error,
+      }) {
         if (!captureIo) return;
         ioLogger.record(ModelIoTrace(
           timestampMs: genStartMs,
@@ -384,7 +389,7 @@ class ChatNotifier extends _$ChatNotifier {
           outputText: buffer.toString(),
           tokenCount: tokenCount,
           timeToFirstTokenMs: firstTokenMs,
-          totalDurationMs: DateTime.now().millisecondsSinceEpoch - genStartMs,
+          totalDurationMs: totalDurationMs,
           outcome: outcome,
           error: error,
         ));
@@ -421,14 +426,22 @@ class ChatNotifier extends _$ChatNotifier {
           log.info(_logTag,
               'generation ${_stopRequested ? 'stopped' : 'done'}: '
               '$tokenCount tokens, ${buffer.length} chars');
-          recordIo(_stopRequested ? TraceOutcome.stopped : TraceOutcome.done);
           final assistantMs = DateTime.now().millisecondsSinceEpoch;
+          final totalDurationMs = assistantMs - genStartMs;
+          recordIo(
+            _stopRequested ? TraceOutcome.stopped : TraceOutcome.done,
+            totalDurationMs,
+          );
           final assistantMsg = Message(
             id: 'msg-$assistantMs',
             conversationId: conversationId,
             role: MessageRole.assistant,
             content: buffer.toString(),
             createdAtMs: assistantMs,
+            tokenCount: tokenCount,
+            timeToFirstTokenMs: firstTokenMs,
+            totalDurationMs: totalDurationMs,
+            replyWaitMs: assistantMs - now,
           );
           msgRepo.save(assistantMsg);
 
@@ -448,6 +461,7 @@ class ChatNotifier extends _$ChatNotifier {
               .error(_logTag, 'generation error after $tokenCount tokens', e, st);
           recordIo(
             e is TimeoutException ? TraceOutcome.timeout : TraceOutcome.error,
+            DateTime.now().millisecondsSinceEpoch - genStartMs,
             error: e.toString(),
           );
           // A client-side timeout only stops the Dart listener — the native
@@ -588,6 +602,7 @@ class ChatNotifier extends _$ChatNotifier {
     required List<DocumentChunk> ragChunks,
     String? imageMarker,
     List<String> imagePaths = const [],
+    required int waitStartMs,
   }) async {
     final log = AppLogger.instance;
     final backend = ref.read(inferenceNotifierProvider).valueOrNull;
@@ -632,6 +647,9 @@ class ChatNotifier extends _$ChatNotifier {
 
     final captureIo = settings.modelIoLoggingEnabled;
     var agentIteration = 0;
+    int? answerTokens;
+    int? answerTtftMs;
+    int? answerDurationMs;
 
     _updateState((s) => s.copyWith(streamingText: 'Thinking…'));
 
@@ -652,6 +670,7 @@ class ChatNotifier extends _$ChatNotifier {
       final startMs = DateTime.now().millisecondsSinceEpoch;
       final buffer = StringBuffer();
       var tokens = 0;
+      int? firstTokenMs;
       // Every agent iteration that carries an image re-runs vision encoding
       // (no KV-cache reuse across generate() calls — see the plain path's
       // generationTimeout comment), so it needs the same generous headroom.
@@ -666,10 +685,18 @@ class ChatNotifier extends _$ChatNotifier {
             imagePaths: imagePaths,
           )
           .timeout(iterationTimeout)) {
+        if (tokens == 0) {
+          firstTokenMs =
+              DateTime.now().millisecondsSinceEpoch - startMs;
+        }
         buffer.write(token);
         tokens++;
         yield token;
       }
+      answerTokens = tokens;
+      answerTtftMs = firstTokenMs;
+      final totalDurationMs = DateTime.now().millisecondsSinceEpoch - startMs;
+      answerDurationMs = totalDurationMs;
       if (captureIo) {
         ModelIoLogger.instance.record(ModelIoTrace(
           timestampMs: startMs,
@@ -682,8 +709,8 @@ class ChatNotifier extends _$ChatNotifier {
           ragChunks: ragChunkTexts,
           outputText: buffer.toString(),
           tokenCount: tokens,
-          timeToFirstTokenMs: null,
-          totalDurationMs: DateTime.now().millisecondsSinceEpoch - startMs,
+          timeToFirstTokenMs: firstTokenMs,
+          totalDurationMs: totalDurationMs,
           outcome:
               _stopRequested ? TraceOutcome.stopped : TraceOutcome.done,
           agentIteration: iteration,
@@ -747,6 +774,10 @@ class ChatNotifier extends _$ChatNotifier {
         role: MessageRole.assistant,
         content: result.answer,
         createdAtMs: assistantMs,
+        tokenCount: result.hitIterationCap ? null : answerTokens,
+        timeToFirstTokenMs: result.hitIterationCap ? null : answerTtftMs,
+        totalDurationMs: result.hitIterationCap ? null : answerDurationMs,
+        replyWaitMs: assistantMs - waitStartMs,
       );
       ref.read(messageRepositoryProvider).save(assistantMsg);
       final conv = ref.read(conversationRepositoryProvider).getById(conversationId);
