@@ -461,9 +461,7 @@ class ChatNotifier extends _$ChatNotifier {
       );
     } catch (e, st) {
       log.error(_logTag, 'send() failed after persist, clearing streaming', e, st);
-      if (state.valueOrNull != null) {
-        state = AsyncData(state.requireValue.copyWith(clearStreaming: true));
-      }
+      _updateState((s) => s.copyWith(clearStreaming: true));
       // throwWithStackTrace rather than a plain throw so the wrapper's stack
       // trace still points at where [e] actually originated, not just this
       // catch block.
@@ -476,6 +474,13 @@ class ChatNotifier extends _$ChatNotifier {
   /// the model's context window (the native backend hard-truncates beyond
   /// this, but windowing here preserves the system prompt + RAG context).
   static const int _maxHistoryMessages = 20;
+
+  /// Applies [update] to the current [ChatState], or does nothing when state
+  /// holds no value (loading or error), e.g. after a previous turn errored.
+  void _updateState(ChatState Function(ChatState) update) {
+    final current = state.valueOrNull;
+    if (current != null) state = AsyncData(update(current));
+  }
 
   /// Stop the in-flight generation. The partial reply already streamed is kept
   /// (the stream's onDone saves it). No-op when nothing is streaming.
@@ -604,11 +609,7 @@ class ChatNotifier extends _$ChatNotifier {
     final captureIo = settings.modelIoLoggingEnabled;
     var agentIteration = 0;
 
-    if (state.valueOrNull != null) {
-      state = AsyncData(
-        state.requireValue.copyWith(streamingText: 'Thinking…'),
-      );
-    }
+    _updateState((s) => s.copyWith(streamingText: 'Thinking…'));
 
     // One model call, streamed:
     Stream<String> generateStream(List<ChatTurn> turns) async* {
@@ -673,19 +674,12 @@ class ChatNotifier extends _$ChatNotifier {
       registry: registry,
       isCancelled: () => _stopRequested,
       onToolCall: (toolName) {
-        if (state.valueOrNull != null) {
-          state = AsyncData(
-            state.requireValue.copyWith(streamingText: 'Using $toolName…'),
-          );
-        }
+        _updateState((s) => s.copyWith(streamingText: 'Using $toolName…'));
       },
       onAnswerToken: (token) {
         answerBuffer.write(token);
-        if (state.valueOrNull != null) {
-          state = AsyncData(
-            state.requireValue.copyWith(streamingText: answerBuffer.toString()),
-          );
-        }
+        _updateState(
+            (s) => s.copyWith(streamingText: answerBuffer.toString()));
       },
       onToolResult: (toolName, observation, iteration) {
         if (!captureIo) return;
@@ -716,11 +710,7 @@ class ChatNotifier extends _$ChatNotifier {
           await loop.run(_historyTurns(history, imageMarker: imageMarker));
 
       if (result.stopped && result.answer.isEmpty) {
-        if (state.valueOrNull != null) {
-          state = AsyncData(
-            state.requireValue.copyWith(clearStreaming: true),
-          );
-        }
+        _updateState((s) => s.copyWith(clearStreaming: true));
         log.info(_logTag,
             'agent stopped: ${result.steps.length} tool step(s), no partial answer');
         return;
