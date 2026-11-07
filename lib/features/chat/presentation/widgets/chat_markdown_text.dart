@@ -32,6 +32,10 @@ class ChatMarkdownText extends StatelessWidget {
       animation:
           isStreaming ? GptMarkdownAnimation.fade : GptMarkdownAnimation.none,
       isStreaming: isStreaming,
+      revealFadeSeconds: 0.65,
+      // No inline-only replacement in the new parser, and titles must not
+      // render as headings or lists. Removed in gpt_markdown 2.0.
+      // ignore: deprecated_member_use
       components: inlineOnly ? MarkdownComponent.inlineComponents : null,
     );
   }
