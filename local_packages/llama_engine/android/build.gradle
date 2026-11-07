@@ -50,14 +50,30 @@ android {
                 cppFlags '-std=c++17 -fexceptions -frtti -O3'
                 arguments '-DANDROID_STL=c++_shared',
                           '-DANDROID_PLATFORM=android-24',
-                          '-DCMAKE_BUILD_TYPE=Release'
+                          '-DCMAKE_BUILD_TYPE=Release',
+                          // One CPU library per ARM feature level; ggml loads the best one the
+                          // phone supports at startup, so older CPUs never run instructions
+                          // they lack.
+                          '-DGGML_BACKEND_DL=ON',
+                          '-DGGML_CPU_ALL_VARIANTS=ON'
                 // tools/mtmd/CMakeLists.txt also defines several CLI/debug
                 // executables we don't want (llama-mtmd-cli, llama-mtmd-debug,
                 // llama-llava-cli, etc.) — some need common/arg.h, which we
                 // don't build. Restrict Gradle to only what we actually ship;
                 // llama_engine_jni's own link deps (llama, mtmd) still build
                 // as transitive targets.
-                targets 'llama_engine_jni'
+                //
+                // The ggml CPU variants are loaded at runtime (nothing links them), so
+                // they must be listed here or Gradle neither builds nor packages them.
+                // Names come from ggml/CMakeLists.txt (GGML_CPU_ALL_VARIANTS, Android).
+                targets 'llama_engine_jni',
+                        'ggml-cpu-android_armv8.0_1',
+                        'ggml-cpu-android_armv8.2_1',
+                        'ggml-cpu-android_armv8.2_2',
+                        'ggml-cpu-android_armv8.6_1',
+                        'ggml-cpu-android_armv9.0_1',
+                        'ggml-cpu-android_armv9.2_1',
+                        'ggml-cpu-android_armv9.2_2'
             }
         }
     }

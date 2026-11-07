@@ -3,11 +3,12 @@
 // Clean-room implementation written against the public llama.cpp API and its
 // MIT-licensed examples. Provides: model load/free, incremental (one-token-per
 // call) streaming generation with a hold-back stop-sequence trim, a batch-safe
-// chunked prompt decode, per-turn KV reset, a penalty/top-k/top-p/temp sampler
-// chain with a separately-applied lazy GBNF grammar (see sampleNextToken), and
-// a lock-free stop flag.
+// chunked prompt decode, KV-cache reuse for an unchanged prompt prefix, a
+// penalty/top-k/top-p/temp sampler chain with a separately-applied lazy GBNF
+// grammar (see sampleNextToken), and a lock-free stop flag.
 
 #include <jni.h>
+#include <dlfcn.h>
 #include <string>
 #include <vector>
 #include <mutex>
@@ -34,6 +35,20 @@ static llama_sampler* g_grammar = nullptr;  // lazy GBNF grammar, applied separa
 static mtmd_context* g_mtmd_ctx = nullptr;  // vision projector, null when no mmproj was loaded
 static std::mutex g_mutex;
 static std::atomic<bool> g_should_stop{false};
+// Prompt tokens currently held in the KV cache (text path only). The next turn
+// re-sends the whole conversation, so we only decode the part that differs.
+static std::vector<llama_token> g_cached;
+
+// The app's native lib folder (where our .so lives): ggml scans it for libggml-cpu-*.so.
+static std::string nativeLibDir() {
+    Dl_info info;
+    if (dladdr((void*) &nativeLibDir, &info) && info.dli_fname) {
+        const std::string p(info.dli_fname);
+        const size_t slash = p.rfind('/');
+        if (slash != std::string::npos) return p.substr(0, slash);
+    }
+    return "";
+}
 
 // Persistent per-generation streaming state.
 struct GenState {
@@ -243,8 +258,11 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeInitModel(
     if (g_context) { llama_free(g_context); g_context = nullptr; }
     if (g_model) { llama_free_model(g_model); g_model = nullptr; }
     g_gen.reset();
+    g_cached.clear();
 
-    ggml_backend_load_all();
+    const std::string lib_dir = nativeLibDir();
+    if (lib_dir.empty()) ggml_backend_load_all();
+    else ggml_backend_load_all_from_path(lib_dir.c_str());
 
     const char* path = env->GetStringUTFChars(model_path, nullptr);
     LOGI("Loading model: %s (threads=%d ctx=%d batch=%d)", path, n_threads, context_size, batch_size);
@@ -337,9 +355,6 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
     g_should_stop = false;
     g_gen.reset();
 
-    // Fresh KV cache each turn (the Dart layer resends the full prompt).
-    llama_memory_clear(llama_get_memory(g_context), true);
-
     const char* prompt_str = env->GetStringUTFChars(prompt, nullptr);
     std::string text(prompt_str);
     env->ReleaseStringUTFChars(prompt, prompt_str);
@@ -353,6 +368,9 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
     }
 
     if (!image_path_vec.empty() && g_mtmd_ctx != nullptr) {
+        // Image chunks aren't plain tokens, so no prefix reuse: start clean.
+        llama_memory_clear(llama_get_memory(g_context), true);
+        g_cached.clear();
         // Multimodal priming: build bitmaps from the given image files, tokenize
         // prompt+images together (the prompt must already contain the marker
         // returned by mtmd_default_marker()), then prime the KV cache in one
@@ -452,18 +470,38 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeGenerateStreamInit(
             LOGI("Truncated prompt by %d tokens to fit n_ctx=%d", overflow, n_ctx);
         }
 
-        // Decode the prompt in chunks no larger than n_batch (a single oversized
+        // Reuse the KV cache for the leading tokens that match the last prompt.
+        // Keep at least one token to decode so we get logits to sample from.
+        size_t reuse = 0;
+        const size_t max_reuse = tokens.empty() ? 0 : tokens.size() - 1;
+        while (reuse < max_reuse && reuse < g_cached.size() && tokens[reuse] == g_cached[reuse]) reuse++;
+        g_cached.clear();  // stays empty if decoding fails below
+        // seq_rm fails on memory types that can't drop a tail (e.g. recurrent
+        // layers); then clear everything and decode the full prompt.
+        const size_t matched = reuse;
+        bool trimmed = true;
+        if (!llama_memory_seq_rm(llama_get_memory(g_context), 0, (llama_pos) reuse, -1)) {
+            llama_memory_clear(llama_get_memory(g_context), true);
+            reuse = 0;
+            trimmed = false;
+        }
+        LOGI("Prompt cache: matched %zu, reusing %zu of %zu tokens (trim ok=%d)",
+             matched, reuse, tokens.size(), (int) trimmed);
+
+        // Decode the rest in chunks no larger than n_batch (a single oversized
         // llama_decode aborts on GGML_ASSERT(n_tokens_all <= n_batch)).
         const uint32_t n_batch = llama_n_batch(g_context);
-        for (size_t i = 0; i < tokens.size(); i += n_batch) {
+        for (size_t i = reuse; i < tokens.size(); i += n_batch) {
             const size_t remaining = tokens.size() - i;
             const size_t chunk = remaining < (size_t) n_batch ? remaining : (size_t) n_batch;
             llama_batch batch = llama_batch_get_one(tokens.data() + i, chunk);
             if (llama_decode(g_context, batch) != 0) {
                 LOGE("Failed to decode prompt chunk at %zu", i);
+                llama_memory_clear(llama_get_memory(g_context), true);
                 return JNI_FALSE;
             }
         }
+        g_cached = tokens;
 
         n_pos_after_prompt = (int) tokens.size();
     }
@@ -572,6 +610,7 @@ Java_dev_lokillm_llama_1engine_LlamaEnginePlugin_nativeFreeModel(
     if (g_context) { llama_free(g_context); g_context = nullptr; }
     if (g_model) { llama_free_model(g_model); g_model = nullptr; }
     g_vocab = nullptr;
+    g_cached.clear();
 }
 
 } // extern "C"
