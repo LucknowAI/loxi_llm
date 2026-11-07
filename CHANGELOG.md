@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The "model loaded" snackbar no longer stays on screen until dismissed ([#101](https://github.com/LucknowAI/loki_llm/issues/101))
+
 ## [1.2.0] — 2026-09-16
 
 ### Added
