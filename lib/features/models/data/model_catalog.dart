@@ -54,6 +54,15 @@ const List<Model> kCuratedModels = [
     mmprojHuggingFaceRepo: 'unsloth/gemma-4-E4B-it-GGUF',
     mmprojSizeBytes: 990372672,
   ),
+  Model(
+    id: 'lfm3-1.7b',
+    name: 'LFM3 1.7B',
+    sizeLabel: '1.05 GB',
+    sizeBytes: 1049615680,
+    format: 'gguf',
+    huggingFaceRepo: 'LiquidAI/LFM3-1.7B-GGUF',
+    filename: 'LFM3-1.7B-QAD-Q4_0.gguf',
+  ),
 ];
 
 /// Compute HuggingFace download URL from model metadata.

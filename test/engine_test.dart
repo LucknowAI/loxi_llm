@@ -6,6 +6,7 @@ import 'package:loki_llm/core/engine/llama_cpp_backend.dart';
 import 'package:loki_llm/core/providers/inference_provider.dart';
 import 'package:loki_llm/core/providers/objectbox_provider.dart';
 import 'package:loki_llm/core/providers/shared_preferences_provider.dart';
+import 'package:loki_llm/features/models/data/model_catalog.dart';
 import 'package:loki_llm/features/models/domain/model.dart';
 import 'package:loki_llm/features/models/domain/model_status.dart';
 import 'package:loki_llm/main.dart';
@@ -39,6 +40,13 @@ void main() {
       );
       final backend = backendForModel(model);
       expect(backend, isA<LlamaCppBackend>());
+      expect(backend.generationParams['temperature'], 0.7);
+    });
+
+    test('LFM3 gets its recommended temperature (0.1)', () {
+      final lfm3 = kCuratedModels.firstWhere((m) => m.id == 'lfm3-1.7b');
+      final backend = backendForModel(lfm3);
+      expect(backend.generationParams['temperature'], 0.1);
     });
 
     test('returns LlamaCppBackend for unknown format string', () {

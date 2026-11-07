@@ -11,7 +11,7 @@ import '../../features/chat/domain/message_role.dart';
 ///
 /// Selection is by [ChatTemplate.forModelId]; [generic] is the safe fallback
 /// (today's `Human:/Assistant:` behavior) for unknown models.
-enum ChatTemplateKind { gemma, phi3, llama3, generic }
+enum ChatTemplateKind { gemma, phi3, llama3, lfm3, generic }
 
 /// A single conversation turn (system prompt is passed separately, matching
 /// the app's Conversation.systemPrompt field).
@@ -32,6 +32,7 @@ class ChatTemplate {
     if (id.contains('gemma')) return const ChatTemplate(ChatTemplateKind.gemma);
     if (id.contains('phi')) return const ChatTemplate(ChatTemplateKind.phi3);
     if (id.contains('llama')) return const ChatTemplate(ChatTemplateKind.llama3);
+    if (id.contains('lfm3')) return const ChatTemplate(ChatTemplateKind.lfm3);
     return const ChatTemplate(ChatTemplateKind.generic);
   }
 
@@ -40,8 +41,32 @@ class ChatTemplate {
         ChatTemplateKind.gemma => const ['<end_of_turn>'],
         ChatTemplateKind.phi3 => const ['<|end|>'],
         ChatTemplateKind.llama3 => const ['<|eot_id|>'],
+        ChatTemplateKind.lfm3 => const ['<|im_end|>'],
         ChatTemplateKind.generic => const ['\nHuman:', '\nUser:'],
       };
+
+  /// The part of a raw model reply that should be shown and saved.
+  ///
+  /// LFM3 can still reason with thinking off. Following Liquid's own template,
+  /// everything up to the last `</think>` is reasoning and is dropped; an
+  /// unclosed `<think>` (reasoning cut off by the token limit) is dropped to
+  /// the end. Other templates return [raw] unchanged.
+  String visibleReply(String raw) {
+    if (kind != ChatTemplateKind.lfm3) return raw;
+    const open = '<think>', close = '</think>';
+    final end = raw.lastIndexOf(close);
+    final answer = end == -1 ? raw : raw.substring(end + close.length);
+    final start = answer.indexOf(open);
+    return (start == -1 ? answer : answer.substring(0, start)).trimLeft();
+  }
+
+  /// Text that starts the model's reply in a conversation-summary prompt.
+  ///
+  /// LFM3's model card notes that disabling thinking can be inconsistent: here
+  /// it can open a reasoning block and spend the whole token budget on it.
+  /// Starting its reply stops that. Only used for summaries, so normal chat
+  /// replies aren't forced to begin with this text.
+  String get summaryPrefill => kind == ChatTemplateKind.lfm3 ? 'Summary:' : '';
 
   /// Format [turns] (oldest first) into the prompt string for this model
   /// family, priming exactly one assistant/model turn at the end.
@@ -61,6 +86,7 @@ class ChatTemplate {
       ChatTemplateKind.gemma => _gemma(effective, systemPrompt),
       ChatTemplateKind.phi3 => _phi3(effective, systemPrompt),
       ChatTemplateKind.llama3 => _llama3(effective, systemPrompt),
+      ChatTemplateKind.lfm3 => _lfm3(effective, systemPrompt),
       ChatTemplateKind.generic => _generic(effective, systemPrompt),
     };
   }
@@ -133,6 +159,29 @@ class ChatTemplate {
       b.write('${t.content}<|eot_id|>');
     }
     b.write('<|start_header_id|>assistant<|end_header_id|>\n\n');
+    return b.toString();
+  }
+
+  // LFM3 uses ChatML turns. Its GGUF sets add_bos_token=false and the model's
+  // own template writes BOS itself, so it is written here (the engine
+  // tokenizes with parse_special, which turns the text into the BOS token).
+  // Thinking is off: every assistant turn, past and primed, opens with an
+  // empty <think></think>, as Liquid's template does with
+  // enable_thinking=false.
+  String _lfm3(List<ChatTurn> turns, String systemPrompt) {
+    final b = StringBuffer('<|startoftext|>');
+    if (systemPrompt.isNotEmpty) {
+      b.write('<|im_start|>system\n$systemPrompt<|im_end|>\n');
+    }
+    for (final t in turns) {
+      if (t.role == MessageRole.user) {
+        b.write('<|im_start|>user\n${t.content}<|im_end|>\n');
+      } else {
+        b.write(
+            '<|im_start|>assistant\n<think></think>${t.content}<|im_end|>\n');
+      }
+    }
+    b.write('<|im_start|>assistant\n<think></think>');
     return b.toString();
   }
 

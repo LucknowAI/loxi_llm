@@ -533,6 +533,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                       );
                     }
                     final msg = messages[index];
+                    final stats = replyStats(
+                      tokenCount: msg.tokenCount,
+                      totalDurationMs: msg.totalDurationMs,
+                      timeToFirstTokenMs: msg.timeToFirstTokenMs,
+                      replyWaitMs: msg.replyWaitMs,
+                    );
                     return MessageBubble(
                       content: msg.content,
                       imagePath: msg.imagePath,
@@ -546,6 +552,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                           ? () => _toggleReadAloud(msg)
                           : null,
                       isSpeaking: _speakingMessageId == msg.id,
+                      speedLabel: stats?.speed,
+                      timeLabel: stats?.time,
                     );
                   },
                 );
