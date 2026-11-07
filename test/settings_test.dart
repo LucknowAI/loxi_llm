@@ -102,9 +102,10 @@ void main() {
       addTearDown(container.dispose);
 
       final settings = container.read(settingsNotifierProvider);
-      expect(settings.enabledToolNames.length, equals(7));
+      expect(settings.enabledToolNames.length, equals(8));
       expect(settings.enabledToolNames, contains('calculator'));
       expect(settings.enabledToolNames, contains('unit_convert'));
+      expect(settings.enabledToolNames, contains('model_info'));
     });
 
     test('setToolEnabled persists disabled tools', () async {
@@ -173,8 +174,9 @@ void main() {
       addTearDown(container.dispose);
 
       final settings = container.read(settingsNotifierProvider);
-      expect(settings.enabledToolNames.length, equals(7));
+      expect(settings.enabledToolNames.length, equals(8));
       expect(settings.enabledToolNames, contains('get_settings'));
+      expect(settings.enabledToolNames, contains('model_info'));
     });
   });
 }

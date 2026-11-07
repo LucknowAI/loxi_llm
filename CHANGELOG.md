@@ -6,9 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Agent tool: `model_info` — reports the loaded model, backend, context size, agent capability, and per-chat RAG flag ([#16](https://github.com/LucknowAI/loxi_llm/issues/16))
+
 ### Fixed
 
 - The chat list names the model that answered and when the chat was updated, instead of "No model" on a plain row ([#103](https://github.com/LucknowAI/loki_llm/issues/103))
+- A chat no longer stays locked with a Stop button after a generation timeout or error; the conversation stays usable and a message explains what happened ([#106](https://github.com/LucknowAI/loki_llm/issues/106))
+- The "model loaded" snackbar no longer stays on screen until dismissed ([#101](https://github.com/LucknowAI/loki_llm/issues/101))
 
 ## [1.2.0] — 2026-09-16
 
