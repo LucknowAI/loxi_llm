@@ -1,9 +1,10 @@
 name: PR Policy
 
 # Required status checks for PRs into develop (see CLAUDE.md: every piece of
-# implementation work must be tracked by an issue, and docs/RELEASE_PROCESS.md:
-# issues need a milestone to be release-trackable). Release PRs (develop ->
-# main) aren't tied to a single issue, so they're exempted below.
+# implementation work must be tracked by an issue, and CONTRIBUTING.md's PR
+# checklist: a milestone must be set so it can be copied onto the issue(s)
+# this PR closes). Release PRs (develop -> main) aren't tied to a single
+# issue, so they're exempted below.
 on:
   pull_request:
     types:
@@ -65,7 +66,7 @@ jobs:
             const milestone = context.payload.pull_request.milestone;
             if (!milestone) {
               core.setFailed(
-                'No milestone assigned to this PR. Set one before merging — it gets copied onto every issue this PR closes (see docs/RELEASE_PROCESS.md).'
+                'No milestone assigned to this PR. Set one before merging — it gets copied onto every issue this PR closes (see CONTRIBUTING.md\'s PR checklist).'
               );
             } else {
               core.info(`Milestone: ${milestone.title}`);
