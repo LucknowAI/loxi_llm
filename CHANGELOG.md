@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Agent tool: `model_info` — reports the loaded model, backend, context size, agent capability, and per-chat RAG flag ([#16](https://github.com/LucknowAI/loxi_llm/issues/16))
+
 ### Fixed
 
 - A chat no longer stays locked with a Stop button after a generation timeout or error; the conversation stays usable and a message explains what happened ([#106](https://github.com/LucknowAI/loki_llm/issues/106))

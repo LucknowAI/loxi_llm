@@ -6,6 +6,7 @@ import '../tools/datetime_tool.dart';
 import '../tools/document_search_tool.dart';
 import '../tools/get_settings_tool.dart';
 import '../tools/list_documents_tool.dart';
+import '../tools/model_info_tool.dart';
 import '../tools/recall_memory_tool.dart';
 import '../tools/unit_convert_tool.dart';
 import '../agent_tool_catalog.dart';
@@ -24,6 +25,11 @@ class ToolRegistryDeps {
     required this.chunkSize,
     this.summary = '',
     this.historyWindow = 20,
+    required this.modelName,
+    required this.backendName,
+    required this.agentCapable,
+    required this.ragEnabled,
+    this.contextSize,
   });
 
   final String conversationId;
@@ -35,6 +41,11 @@ class ToolRegistryDeps {
   final int chunkSize;
   final String summary;
   final int historyWindow;
+  final String modelName;
+  final String backendName;
+  final int? contextSize;
+  final bool agentCapable;
+  final bool ragEnabled;
 }
 
 /// Builds the default tool registry for agent-mode conversations.
@@ -60,6 +71,13 @@ ToolRegistry buildDefaultToolRegistry(
     ListDocumentsTool(listDocuments: deps.documentRepo.getAll),
     UnitConvertTool(),
     GetSettingsTool(chunkSize: deps.chunkSize, topK: deps.topK),
+    ModelInfoTool(
+      modelName: deps.modelName,
+      backendName: deps.backendName,
+      contextSize: deps.contextSize,
+      agentCapable: deps.agentCapable,
+      ragEnabled: deps.ragEnabled,
+    ),
   ].where((t) => enabled.contains(t.name)).toList();
 
   return ToolRegistry(tools);

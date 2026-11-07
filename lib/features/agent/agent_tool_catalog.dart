@@ -15,6 +15,7 @@ const kAgentToolCatalog = [
   AgentToolInfo(name: 'list_documents', label: 'List documents'),
   AgentToolInfo(name: 'unit_convert', label: 'Unit converter'),
   AgentToolInfo(name: 'get_settings', label: 'RAG settings info'),
+  AgentToolInfo(name: 'model_info', label: 'Loaded model info'),
 ];
 
 /// Default enabled tool names (all on).
