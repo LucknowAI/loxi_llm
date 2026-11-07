@@ -38,7 +38,9 @@ class ConversationSummarizer {
       ..writeln()
       ..write('Updated summary:');
 
-    final result = await generate(instruction.toString());
-    return result.trim();
+    // An empty result (e.g. the model spent its token budget on reasoning)
+    // must not wipe a good summary.
+    final result = (await generate(instruction.toString())).trim();
+    return result.isEmpty ? existingSummary : result;
   }
 }

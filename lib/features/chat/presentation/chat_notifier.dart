@@ -418,7 +418,9 @@ class ChatNotifier extends _$ChatNotifier {
           tokenCount++;
           buffer.write(token);
           state = AsyncData(
-            state.requireValue.copyWith(streamingText: buffer.toString()),
+            state.requireValue.copyWith(
+              streamingText: template.visibleReply(buffer.toString()),
+            ),
           );
         },
         onDone: () {
@@ -436,7 +438,7 @@ class ChatNotifier extends _$ChatNotifier {
             id: 'msg-$assistantMs',
             conversationId: conversationId,
             role: MessageRole.assistant,
-            content: buffer.toString(),
+            content: template.visibleReply(buffer.toString()),
             createdAtMs: assistantMs,
             tokenCount: tokenCount,
             timeToFirstTokenMs: firstTokenMs,
@@ -545,16 +547,17 @@ class ChatNotifier extends _$ChatNotifier {
     final summarizer = ConversationSummarizer(
       generate: (instruction) async {
         final prompt = buildPrompt(
-          template: template,
-          turns: [ChatTurn(MessageRole.user, instruction)],
-        );
+              template: template,
+              turns: [ChatTurn(MessageRole.user, instruction)],
+            ) +
+            template.summaryPrefill;
         final buffer = StringBuffer();
         await for (final token in backend
             .generate(prompt, stopSequences: template.stopSequences)
             .timeout(const Duration(seconds: 120))) {
           buffer.write(token);
         }
-        return buffer.toString();
+        return template.visibleReply(buffer.toString());
       },
     );
 

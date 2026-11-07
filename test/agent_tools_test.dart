@@ -110,6 +110,9 @@ void main() {
     test('blocks Gemma 270M', () {
       expect(isAgentCapableModel('gemma3-270m-it'), isFalse);
     });
+    test('blocks LFM3 until its tool-call format is supported', () {
+      expect(isAgentCapableModel('lfm3-1.7b'), isFalse);
+    });
     test('blocks null or empty model id', () {
       expect(isAgentCapableModel(null), isFalse);
       expect(isAgentCapableModel(''), isFalse);
