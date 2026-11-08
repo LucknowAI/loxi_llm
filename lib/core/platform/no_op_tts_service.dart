@@ -8,7 +8,13 @@ final class NoOpTtsService implements TtsService {
   Future<void> dispose() async {}
 
   @override
-  Future<void> speak(String text) async {}
+  Future<void> speak(String text, {double rate = 0.5}) async {}
+
+  @override
+  Future<void> pause() async {}
+
+  @override
+  Future<void> resume({double rate = 0.5}) async {}
 
   @override
   Future<void> stop() async {}

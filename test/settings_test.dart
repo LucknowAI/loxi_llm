@@ -178,5 +178,20 @@ void main() {
       expect(settings.enabledToolNames, contains('get_settings'));
       expect(settings.enabledToolNames, contains('model_info'));
     });
+
+    test('speech rate defaults to normal, persists, and stays in range',
+        () async {
+      final (container, _) = await makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(settingsNotifierProvider.notifier);
+
+      expect(container.read(settingsNotifierProvider).speechRate, 0.5);
+
+      notifier.setSpeechRate(0.8);
+      expect(container.read(settingsNotifierProvider).speechRate, 0.8);
+
+      notifier.setSpeechRate(4);
+      expect(container.read(settingsNotifierProvider).speechRate, 1.0);
+    });
   });
 }

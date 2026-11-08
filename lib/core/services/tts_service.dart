@@ -4,7 +4,15 @@ abstract class TtsService {
   bool get isSupported;
 
   /// Speak [text] aloud. Stops any in-progress utterance first.
-  Future<void> speak(String text);
+  ///
+  /// [rate] is the flutter_tts scale: 0.5 is normal speed.
+  Future<void> speak(String text, {double rate = 0.5});
+
+  /// Pause the current utterance so [resume] can continue it.
+  Future<void> pause();
+
+  /// Continue the utterance paused by [pause].
+  Future<void> resume({double rate = 0.5});
 
   /// Stop the current utterance, if any.
   Future<void> stop();
