@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loki_llm/core/providers/shared_preferences_provider.dart';
+import 'package:loki_llm/features/settings/domain/generation_settings.dart';
 import 'package:loki_llm/features/settings/presentation/settings_notifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -57,6 +58,47 @@ void main() {
       expect(settings.topK, equals(5));
     });
 
+    test('generation settings default, persist, and clamp reply length',
+        () async {
+      final (container, _) = await makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(settingsNotifierProvider.notifier);
+
+      expect(notifier.generationFor('phi3-mini-4k-q4km').temperature, 0.7);
+      expect(notifier.generationFor('lfm3-1.7b').temperature, 0.1);
+
+      notifier.saveGeneration(
+        'phi3-mini-4k-q4km',
+        notifier.generationFor('phi3-mini-4k-q4km').copyWith(
+              temperature: 1.2,
+              maxTokens: 4000,
+            ),
+      );
+
+      final saved = notifier.generationFor('phi3-mini-4k-q4km');
+      expect(saved.temperature, 1.2);
+      expect(saved.maxTokens, 2048 - GenerationSettings.promptRoom);
+      expect(
+        saved.differsFromLoaded(nThreads: 4, contextSize: 2048, batchSize: 512),
+        isFalse,
+      );
+      expect(
+        saved.copyWith(contextSize: 4096).differsFromLoaded(
+              nThreads: 4,
+              contextSize: 2048,
+              batchSize: 512,
+            ),
+        isTrue,
+      );
+      // A larger saved context does not raise the length the loaded model can take.
+      expect(
+        saved
+            .copyWith(contextSize: 4096, maxTokens: 3000)
+            .maxTokensForLoadedContext(2048),
+        2048 - GenerationSettings.promptRoom,
+      );
+    });
+
     test('setChunkSize writes the new value to SharedPreferences', () async {
       final (container, prefs) = await makeContainer();
       addTearDown(container.dispose);
@@ -75,7 +117,8 @@ void main() {
       expect(prefs.getInt('settings_top_k'), equals(8));
     });
 
-    test('setChunkSize followed by setTopK persists both independently', () async {
+    test('setChunkSize followed by setTopK persists both independently',
+        () async {
       final (container, prefs) = await makeContainer();
       addTearDown(container.dispose);
 

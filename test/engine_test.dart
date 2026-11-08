@@ -43,10 +43,11 @@ void main() {
       expect(backend.generationParams['temperature'], 0.7);
     });
 
-    test('LFM3 gets its recommended temperature (0.1)', () {
+    test('LFM3 uses the same backend; its temperature default is in settings',
+        () {
       final lfm3 = kCuratedModels.firstWhere((m) => m.id == 'lfm3-1.7b');
-      final backend = backendForModel(lfm3);
-      expect(backend.generationParams['temperature'], 0.1);
+      expect(backendForModel(lfm3), isA<LlamaCppBackend>());
+      expect(backendForModel(lfm3).generationParams['temperature'], 0.7);
     });
 
     test('returns LlamaCppBackend for unknown format string', () {
@@ -123,8 +124,7 @@ void main() {
     test('carries stopSequences through to the implementation', () async {
       final backend = _CapturingBackend();
       await backend
-          .generate('hi', stopSequences: const ['<end_of_turn>'])
-          .toList();
+          .generate('hi', stopSequences: const ['<end_of_turn>']).toList();
       expect(backend.lastStops, const ['<end_of_turn>']);
     });
 
@@ -152,13 +152,15 @@ void main() {
   group('InferenceBackend.loadModel mmprojPath', () {
     test('carries mmprojPath through to the implementation', () async {
       final backend = _CapturingBackend();
-      await backend.loadModel('/tmp/model.gguf', mmprojPath: '/tmp/mmproj.gguf');
+      await backend.loadModel('/tmp/model.gguf',
+          mmprojPath: '/tmp/mmproj.gguf');
       expect(backend.lastMmprojPath, '/tmp/mmproj.gguf');
     });
   });
 
   group('InferenceNotifier initial state', () {
-    test('build() returns AsyncData(null) — no model loaded at startup', () async {
+    test('build() returns AsyncData(null) — no model loaded at startup',
+        () async {
       final container = ProviderContainer(
         overrides: [
           objectBoxStoreProvider.overrideWith(
@@ -175,7 +177,8 @@ void main() {
   });
 
   group('ChatScreen widget', () {
-    testWidgets('shows load-model prompt when no backend loaded', (tester) async {
+    testWidgets('shows load-model prompt when no backend loaded',
+        (tester) async {
       SharedPreferences.setMockInitialValues({'onboarding_complete': true});
       final prefs = await SharedPreferences.getInstance();
 
@@ -217,7 +220,13 @@ final class _CapturingBackend extends InferenceBackend {
   String? lastMmprojPath;
 
   @override
-  Future<void> loadModel(String path, {String? mmprojPath}) async {
+  Future<void> loadModel(
+    String path, {
+    String? mmprojPath,
+    int nThreads = 4,
+    int contextSize = 2048,
+    int batchSize = 512,
+  }) async {
     lastMmprojPath = mmprojPath;
   }
 
@@ -227,6 +236,11 @@ final class _CapturingBackend extends InferenceBackend {
     List<String> stopSequences = const [],
     String? grammar,
     List<String> imagePaths = const [],
+    int maxTokens = 512,
+    double temperature = 0.7,
+    int topK = 40,
+    double topP = 0.95,
+    double repeatPenalty = 1.1,
   }) async* {
     lastStops = stopSequences;
     lastImagePaths = imagePaths;

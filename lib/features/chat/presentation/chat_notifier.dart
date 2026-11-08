@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/engine/chat_template.dart';
+import '../../../core/engine/inference_backend.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/logging/model_io_logger.dart';
 import '../../../core/logging/model_io_trace.dart';
@@ -20,6 +21,7 @@ import '../domain/message_role.dart';
 import '../../documents/data/document_chunk_repository.dart';
 import '../../documents/data/document_repository.dart';
 import '../../documents/domain/document_chunk.dart';
+import '../../settings/domain/generation_settings.dart';
 import '../../settings/presentation/settings_notifier.dart';
 import 'conversation_list_notifier.dart';
 
@@ -205,7 +207,8 @@ class ChatNotifier extends _$ChatNotifier {
       log.warn(_logTag, 'send() aborted — no model loaded');
       throw StateError('No model loaded');
     }
-    log.debug(_logTag, 'backend=${backend.runtimeType} isLoaded=${backend.isLoaded}');
+    log.debug(
+        _logTag, 'backend=${backend.runtimeType} isLoaded=${backend.isLoaded}');
 
     // Same "don't send" contract as the no-model-loaded guard above: verify
     // before anything is persisted, not after. An image can vanish between
@@ -215,8 +218,10 @@ class ChatNotifier extends _$ChatNotifier {
     if (imagePath != null &&
         backend.supportsVision &&
         !await File(imagePath).exists()) {
-      log.warn(_logTag, 'send() aborted — attached image no longer exists: $imagePath');
-      throw StateError('Attached image is no longer available. Please re-attach.');
+      log.warn(_logTag,
+          'send() aborted — attached image no longer exists: $imagePath');
+      throw StateError(
+          'Attached image is no longer available. Please re-attach.');
     }
 
     final convRepo = ref.read(conversationRepositoryProvider);
@@ -304,8 +309,9 @@ class ChatNotifier extends _$ChatNotifier {
       // observed ~186s for one image on a mid-range phone — versus a few
       // seconds for text-only prefill. Give it real headroom rather than
       // timing out mid-encode.
-      final generationTimeout =
-          wantsVision ? const Duration(seconds: 300) : const Duration(seconds: 60);
+      final generationTimeout = wantsVision
+          ? const Duration(seconds: 300)
+          : const Duration(seconds: 60);
 
       // Tool-calling agent path (per-conversation toggle). When enabled and the
       // loaded model supports tools, the model decides which tools to call; the
@@ -353,7 +359,8 @@ class ChatNotifier extends _$ChatNotifier {
         ragContext: _buildRagContext(ragChunks),
       );
       // ~4 chars/token is a rough heuristic for spotting context-window issues.
-      log.info(_logTag,
+      log.info(
+          _logTag,
           'prompt built (${template.kind.name}): ${prompt.length} chars '
           '(~${(prompt.length / 4).round()} tokens est)');
 
@@ -401,14 +408,12 @@ class ChatNotifier extends _$ChatNotifier {
       log.info(_logTag, 'invoking native generate()');
       await log.flush();
 
-      _tokenSub = backend
-          .generate(
-            prompt,
-            stopSequences: template.stopSequences,
-            imagePaths: generationImagePaths,
-          )
-          .timeout(generationTimeout)
-          .listen(
+      _tokenSub = _generate(
+        backend,
+        prompt,
+        stopSequences: template.stopSequences,
+        imagePaths: generationImagePaths,
+      ).timeout(generationTimeout).listen(
         (token) {
           if (myGeneration != _generation) return;
           if (tokenCount == 0) {
@@ -425,7 +430,8 @@ class ChatNotifier extends _$ChatNotifier {
         },
         onDone: () {
           if (myGeneration != _generation) return;
-          log.info(_logTag,
+          log.info(
+              _logTag,
               'generation ${_stopRequested ? 'stopped' : 'done'}: '
               '$tokenCount tokens, ${buffer.length} chars');
           final assistantMs = DateTime.now().millisecondsSinceEpoch;
@@ -459,8 +465,8 @@ class ChatNotifier extends _$ChatNotifier {
           ));
         },
         onError: (Object e, StackTrace st) async {
-          AppLogger.instance
-              .error(_logTag, 'generation error after $tokenCount tokens', e, st);
+          AppLogger.instance.error(
+              _logTag, 'generation error after $tokenCount tokens', e, st);
           recordIo(
             e is TimeoutException ? TraceOutcome.timeout : TraceOutcome.error,
             DateTime.now().millisecondsSinceEpoch - genStartMs,
@@ -482,8 +488,8 @@ class ChatNotifier extends _$ChatNotifier {
             try {
               await backend.stop();
             } catch (stopError, stopSt) {
-              AppLogger.instance.error(
-                  _logTag, 'backend.stop() after timeout failed', stopError, stopSt);
+              AppLogger.instance.error(_logTag,
+                  'backend.stop() after timeout failed', stopError, stopSt);
             }
           }
           if (myGeneration != _generation) return;
@@ -492,7 +498,8 @@ class ChatNotifier extends _$ChatNotifier {
         cancelOnError: true,
       );
     } catch (e, st) {
-      log.error(_logTag, 'send() failed after persist, clearing streaming', e, st);
+      log.error(
+          _logTag, 'send() failed after persist, clearing streaming', e, st);
       _updateState((s) => s.copyWith(clearStreaming: true));
       // throwWithStackTrace rather than a plain throw so the wrapper's stack
       // trace still points at where [e] actually originated, not just this
@@ -506,6 +513,36 @@ class ChatNotifier extends _$ChatNotifier {
   /// the model's context window (the native backend hard-truncates beyond
   /// this, but windowing here preserves the system prompt + RAG context).
   static const int _maxHistoryMessages = 20;
+
+  GenerationSettings _sampling() {
+    final id =
+        ref.read(inferenceNotifierProvider.notifier).loadedModel?.id ?? '';
+    return ref.read(settingsNotifierProvider.notifier).generationFor(id);
+  }
+
+  Stream<String> _generate(
+    InferenceBackend backend,
+    String prompt, {
+    required List<String> stopSequences,
+    String? grammar,
+    List<String> imagePaths = const [],
+    int? maxTokens,
+  }) {
+    final sampling = _sampling().copyWith(maxTokens: maxTokens);
+    final loaded = backend.generationParams['contextSize'];
+    final context = loaded is int ? loaded : sampling.contextSize;
+    return backend.generate(
+      prompt,
+      stopSequences: stopSequences,
+      grammar: grammar,
+      imagePaths: imagePaths,
+      maxTokens: sampling.maxTokensForLoadedContext(context),
+      temperature: sampling.temperature,
+      topK: sampling.topK,
+      topP: sampling.topP,
+      repeatPenalty: sampling.repeatPenalty,
+    );
+  }
 
   /// Applies [update] to the current [ChatState], or does nothing when state
   /// holds no value (loading or error), e.g. after a previous turn errored.
@@ -552,9 +589,12 @@ class ChatNotifier extends _$ChatNotifier {
             ) +
             template.summaryPrefill;
         final buffer = StringBuffer();
-        await for (final token in backend
-            .generate(prompt, stopSequences: template.stopSequences)
-            .timeout(const Duration(seconds: 120))) {
+        await for (final token in _generate(
+          backend,
+          prompt,
+          stopSequences: template.stopSequences,
+          maxTokens: GenerationSettings.summarizerMaxTokens,
+        ).timeout(const Duration(seconds: 120))) {
           buffer.write(token);
         }
         return template.visibleReply(buffer.toString());
@@ -584,8 +624,11 @@ class ChatNotifier extends _$ChatNotifier {
         try {
           await backend.stop();
         } catch (stopError, stopSt) {
-          log.error(_logTag, 'backend.stop() after summarization timeout failed',
-              stopError, stopSt);
+          log.error(
+              _logTag,
+              'backend.stop() after summarization timeout failed',
+              stopError,
+              stopSt);
         }
       }
       return existingSummary;
@@ -680,17 +723,15 @@ class ChatNotifier extends _$ChatNotifier {
       final iterationTimeout = imagePaths.isNotEmpty
           ? const Duration(seconds: 300)
           : const Duration(seconds: 120);
-      await for (final token in backend
-          .generate(
-            prompt,
-            stopSequences: template.stopSequences,
-            grammar: grammar,
-            imagePaths: imagePaths,
-          )
-          .timeout(iterationTimeout)) {
+      await for (final token in _generate(
+        backend,
+        prompt,
+        stopSequences: template.stopSequences,
+        grammar: grammar,
+        imagePaths: imagePaths,
+      ).timeout(iterationTimeout)) {
         if (tokens == 0) {
-          firstTokenMs =
-              DateTime.now().millisecondsSinceEpoch - startMs;
+          firstTokenMs = DateTime.now().millisecondsSinceEpoch - startMs;
         }
         buffer.write(token);
         tokens++;
@@ -714,8 +755,7 @@ class ChatNotifier extends _$ChatNotifier {
           tokenCount: tokens,
           timeToFirstTokenMs: firstTokenMs,
           totalDurationMs: totalDurationMs,
-          outcome:
-              _stopRequested ? TraceOutcome.stopped : TraceOutcome.done,
+          outcome: _stopRequested ? TraceOutcome.stopped : TraceOutcome.done,
           agentIteration: iteration,
         ));
       }
@@ -750,8 +790,7 @@ class ChatNotifier extends _$ChatNotifier {
           tokenCount: 0,
           timeToFirstTokenMs: null,
           totalDurationMs: 0,
-          outcome:
-              _stopRequested ? TraceOutcome.stopped : TraceOutcome.done,
+          outcome: _stopRequested ? TraceOutcome.stopped : TraceOutcome.done,
           agentIteration: iteration,
           toolName: toolName,
           toolResult: observation,
@@ -783,7 +822,8 @@ class ChatNotifier extends _$ChatNotifier {
         replyWaitMs: assistantMs - waitStartMs,
       );
       ref.read(messageRepositoryProvider).save(assistantMsg);
-      final conv = ref.read(conversationRepositoryProvider).getById(conversationId);
+      final conv =
+          ref.read(conversationRepositoryProvider).getById(conversationId);
       if (conv != null) {
         ref
             .read(conversationRepositoryProvider)

@@ -2,6 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../features/models/data/model_repository.dart';
 import '../../features/models/domain/model.dart';
 import '../../features/models/domain/model_status.dart';
+import '../../features/settings/presentation/settings_notifier.dart';
 import '../engine/backend_selector.dart';
 import '../engine/inference_backend.dart';
 import '../logging/app_logger.dart';
@@ -46,7 +47,15 @@ class InferenceNotifier extends _$InferenceNotifier {
       if (previousBackend != null) {
         await previousBackend.unloadModel();
       }
-      await backend.loadModel(model.localPath!, mmprojPath: model.mmprojLocalPath);
+      final sampling =
+          ref.read(settingsNotifierProvider.notifier).generationFor(model.id);
+      await backend.loadModel(
+        model.localPath!,
+        mmprojPath: model.mmprojLocalPath,
+        nThreads: sampling.nThreads,
+        contextSize: sampling.contextSize,
+        batchSize: sampling.batchSize,
+      );
       // Assign before [state] so listeners (e.g. load SnackBar) see the new model.
       loadedModel = model;
       state = AsyncData(backend);

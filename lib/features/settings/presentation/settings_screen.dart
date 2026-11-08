@@ -46,6 +46,16 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) => notifier.setTopK(v.round()),
           ),
           const Divider(height: 32),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.tune),
+            title: const Text('Generation'),
+            subtitle:
+                const Text('Temperature, length, and how the model is loaded'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/generation'),
+          ),
+          const Divider(height: 32),
           Text(
             'Agent tools',
             style: Theme.of(context).textTheme.titleMedium,

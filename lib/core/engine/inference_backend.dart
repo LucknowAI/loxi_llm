@@ -6,7 +6,13 @@
 base class InferenceBackend {
   /// [mmprojPath], when non-null, loads a companion mmproj vision projector
   /// alongside the base model. Backends that don't support vision ignore it.
-  Future<void> loadModel(String path, {String? mmprojPath}) =>
+  Future<void> loadModel(
+    String path, {
+    String? mmprojPath,
+    int nThreads = 4,
+    int contextSize = 2048,
+    int batchSize = 512,
+  }) =>
       throw UnimplementedError('loadModel not implemented');
 
   /// Stream the model's response to [prompt].
@@ -22,6 +28,11 @@ base class InferenceBackend {
     List<String> stopSequences = const [],
     String? grammar,
     List<String> imagePaths = const [],
+    int maxTokens = 512,
+    double temperature = 0.7,
+    int topK = 40,
+    double topP = 0.95,
+    double repeatPenalty = 1.1,
   }) =>
       throw UnimplementedError('generate not implemented');
 
