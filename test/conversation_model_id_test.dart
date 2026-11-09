@@ -202,6 +202,11 @@ final class _ErrorBackend extends InferenceBackend {
     List<String> stopSequences = const [],
     String? grammar,
     List<String> imagePaths = const [],
+    int maxTokens = 512,
+    double temperature = 0.7,
+    int topK = 40,
+    double topP = 0.95,
+    double repeatPenalty = 1.1,
   }) =>
       Stream.error(StateError('failed'));
 }
@@ -223,6 +228,11 @@ final class _HoldBackend extends InferenceBackend {
     List<String> stopSequences = const [],
     String? grammar,
     List<String> imagePaths = const [],
+    int maxTokens = 512,
+    double temperature = 0.7,
+    int topK = 40,
+    double topP = 0.95,
+    double repeatPenalty = 1.1,
   }) async* {
     await _gate.future;
   }
