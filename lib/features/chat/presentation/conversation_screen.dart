@@ -9,6 +9,7 @@ import '../../../core/engine/inference_backend.dart';
 import '../../../core/providers/download_provider.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../../../core/providers/tts_provider.dart';
+import '../../../core/services/tts_service.dart';
 import '../../agent/agent_model_support.dart';
 import '../../models/domain/model.dart';
 import '../../settings/presentation/settings_notifier.dart';
@@ -80,6 +81,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   /// True after pause, until resume, stop, or a different message.
   bool _readAloudPaused = false;
 
+  /// Read in initState. [dispose] cannot use `ref`.
+  late final TtsService _tts;
+
   /// Path to an image attached to the message being composed, if any. Copied
   /// into app storage so it survives independently of the picker's temp file.
   String? _attachedImagePath;
@@ -89,11 +93,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     super.initState();
     _textController = TextEditingController();
     _scrollController = ScrollController();
+    _tts = ref.read(ttsServiceProvider);
   }
 
   @override
   void dispose() {
-    ref.read(ttsServiceProvider).stop();
+    _tts.stop();
     _textController.dispose();
     _scrollController.dispose();
     if (_attachedImagePath != null) {
@@ -304,11 +309,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       _speakingMessageId = null;
       _readAloudPaused = false;
     });
-    await ref.read(ttsServiceProvider).stop();
+    await _tts.stop();
   }
 
   Future<void> _toggleReadAloud(Message message) async {
-    final tts = ref.read(ttsServiceProvider);
+    final tts = _tts;
     if (!tts.isSupported) {
       _showSnack('Read aloud is available on Android');
       return;
@@ -319,7 +324,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       // Set this before pause returns. Pause completes the in-flight speak,
       // and that completion must not clear the button.
       setState(() => _readAloudPaused = true);
-      await tts.pause();
+      final paused = await tts.pause();
+      if (!mounted) return;
+      if (!paused) {
+        setState(() {
+          _speakingMessageId = null;
+          _readAloudPaused = false;
+        });
+      }
       return;
     }
     if (same && _readAloudPaused) {

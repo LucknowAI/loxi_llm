@@ -5,7 +5,7 @@ import '../services/tts_service.dart';
 
 /// Android/iOS platform TTS via [FlutterTts] (wraps TextToSpeech on Android).
 final class FlutterTtsService implements TtsService {
-  FlutterTtsService() : _tts = FlutterTts() {
+  FlutterTtsService({FlutterTts? tts}) : _tts = tts ?? FlutterTts() {
     _tts.awaitSpeakCompletion(true);
   }
 
@@ -34,9 +34,16 @@ final class FlutterTtsService implements TtsService {
   }
 
   @override
-  Future<void> pause() {
+  Future<bool> pause() async {
     _gen++;
-    return _tts.pause();
+    final result = await _tts.pause();
+    // 1 means the engine paused and kept the rest of the sentence.
+    // 0 means it cannot pause. Stop so the voice and the button agree,
+    // and the next speak starts over.
+    if (result == 1) return true;
+    _utterance = null;
+    await _tts.stop();
+    return false;
   }
 
   @override
