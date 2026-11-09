@@ -74,6 +74,7 @@ void main() {
               maxTokens: 4000,
             ),
       );
+      expect(notifier.generationFor('lfm3-1.7b').temperature, 0.1);
 
       final saved = notifier.generationFor('phi3-mini-4k-q4km');
       expect(saved.temperature, 1.2);
@@ -97,6 +98,23 @@ void main() {
             .maxTokensForLoadedContext(2048),
         2048 - GenerationSettings.promptRoom,
       );
+
+      notifier.saveGeneration(
+        'phi3-mini-4k-q4km',
+        GenerationSettings.defaultsFor('phi3-mini-4k-q4km'),
+      );
+      expect(notifier.generationFor('phi3-mini-4k-q4km').temperature, 0.7);
+
+      notifier.saveGeneration(
+        'lfm3-1.7b',
+        notifier.generationFor('lfm3-1.7b').copyWith(temperature: 0.9),
+      );
+      notifier.saveGeneration(
+        'lfm3-1.7b',
+        GenerationSettings.defaultsFor('lfm3-1.7b'),
+      );
+      expect(notifier.generationFor('lfm3-1.7b').temperature, 0.1);
+      expect(notifier.generationFor('phi3-mini-4k-q4km').temperature, 0.7);
     });
 
     test('setChunkSize writes the new value to SharedPreferences', () async {
