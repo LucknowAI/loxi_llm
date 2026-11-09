@@ -12,6 +12,7 @@ import '../../../core/providers/tts_provider.dart';
 import '../../../core/services/tts_service.dart';
 import '../../agent/agent_model_support.dart';
 import '../../models/domain/model.dart';
+import '../../settings/presentation/prompt_library_screen.dart';
 import '../../settings/presentation/settings_notifier.dart';
 import '../application/conversation_markdown_exporter.dart';
 import '../data/conversation_repository.dart';
@@ -224,37 +225,90 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final controller = TextEditingController(text: conversation.systemPrompt);
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('System Prompt'),
-        content: TextField(
-          controller: controller,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            hintText: 'Enter system prompt (optional)',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              ref
-                  .read(conversationListNotifierProvider.notifier)
-                  .updateSystemPrompt(
-                    widget.conversationId,
-                    controller.text,
-                  );
-              Navigator.of(ctx).pop();
-              controller.dispose();
-            },
-            child: const Text('Save'),
-          ),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final prompts =
+              ref.read(settingsNotifierProvider.notifier).savedPrompts();
+          return AlertDialog(
+            title: const Text('System Prompt'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: controller,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                        hintText: 'Enter system prompt (optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    if (prompts.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          for (final prompt in prompts)
+                            ActionChip(
+                              label: Text(prompt.name),
+                              onPressed: () {
+                                controller.text = prompt.body;
+                                controller.selection = TextSelection.collapsed(
+                                  offset: controller.text.length,
+                                );
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  await _savePromptToLibrary(controller.text);
+                  if (ctx.mounted) setDialogState(() {});
+                },
+                child: const Text('Save to library'),
+              ),
+              TextButton(
+                onPressed: () {
+                  ref
+                      .read(conversationListNotifierProvider.notifier)
+                      .updateSystemPrompt(
+                        widget.conversationId,
+                        controller.text,
+                      );
+                  Navigator.of(ctx).pop();
+                  controller.dispose();
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
       ),
     );
+  }
+
+  Future<void> _savePromptToLibrary(String body) async {
+    final taken = ref.read(settingsNotifierProvider.notifier).savedPrompts();
+    final name = await askPromptName(
+      context,
+      nameTaken: (candidate) =>
+          taken.any((prompt) => prompt.name == candidate),
+    );
+    if (!mounted || name == null) return;
+    ref.read(settingsNotifierProvider.notifier).savePrompt(name, body);
   }
 
   void _showSnack(String message) {
@@ -378,6 +432,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
     final isModelLoaded = backendAsync.valueOrNull != null;
     final isStreaming = chatAsync.valueOrNull?.isStreaming ?? false;
+    ref.watch(settingsNotifierProvider);
+    final savedPrompts =
+        ref.read(settingsNotifierProvider.notifier).savedPrompts();
     final exportConversation = conversation ?? currentConv;
 
     // The chat tab is kept alive in an IndexedStack, so switching to a
@@ -538,6 +595,90 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 // Auto-scroll when messages change
                 if (messages.isNotEmpty || streamingText != null) {
                   _scrollToBottom();
+                }
+
+                final choices = savedPrompts.take(6).toList();
+                if (messages.isEmpty &&
+                    streamingText == null &&
+                    (conversation?.systemPrompt ?? '').isEmpty &&
+                    choices.isNotEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Start with a saved prompt',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 12),
+                          for (var start = 0;
+                              start < choices.length;
+                              start += 3)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Row(
+                                children: [
+                                  for (var column = 0; column < 3; column++)
+                                    Expanded(
+                                      child: start + column < choices.length
+                                          ? Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 4,
+                                              ),
+                                              child: LayoutBuilder(
+                                                builder:
+                                                    (context, constraints) {
+                                                  final prompt =
+                                                      choices[start + column];
+                                                  return ActionChip(
+                                                    label: ConstrainedBox(
+                                                      constraints:
+                                                          BoxConstraints(
+                                                        maxWidth: constraints
+                                                                    .maxWidth <
+                                                                24
+                                                            ? 0
+                                                            : constraints
+                                                                    .maxWidth -
+                                                                24,
+                                                      ),
+                                                      child: Text(
+                                                        prompt.name,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        textAlign:
+                                                            TextAlign.center,
+                                                      ),
+                                                    ),
+                                                    onPressed: () => ref
+                                                        .read(
+                                                            conversationListNotifierProvider
+                                                                .notifier)
+                                                        .updateSystemPrompt(
+                                                          widget.conversationId,
+                                                          prompt.body,
+                                                        ),
+                                                  );
+                                                },
+                                              ),
+                                            )
+                                          : const SizedBox.shrink(),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          TextButton(
+                            onPressed: _editSystemPrompt,
+                            child: const Text('More'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
                 }
 
                 return ListView.builder(
