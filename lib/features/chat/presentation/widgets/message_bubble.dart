@@ -39,7 +39,9 @@ class MessageBubble extends StatelessWidget {
     required this.isStreaming,
     this.onCopy,
     this.onReadAloud,
+    this.onStopReadAloud,
     this.isSpeaking = false,
+    this.isPaused = false,
     this.speedLabel,
     this.timeLabel,
   }) : assert(content != null || child != null,
@@ -54,9 +56,13 @@ class MessageBubble extends StatelessWidget {
   final bool isStreaming;
   final VoidCallback? onCopy;
   final VoidCallback? onReadAloud;
+  final VoidCallback? onStopReadAloud;
 
-  /// When true, the read-aloud button shows a stop icon.
+  /// When true, the read-aloud button shows pause.
   final bool isSpeaking;
+
+  /// When true, the read-aloud button shows resume.
+  final bool isPaused;
 
   /// Model speed, shown at the bottom only after the reply is saved.
   final String? speedLabel;
@@ -75,7 +81,8 @@ class MessageBubble extends StatelessWidget {
         (speedLabel != null ||
             timeLabel != null ||
             onCopy != null ||
-            onReadAloud != null);
+            onReadAloud != null ||
+            onStopReadAloud != null);
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -150,11 +157,26 @@ class MessageBubble extends StatelessWidget {
                       ),
                     if (onReadAloud != null)
                       _ActionIcon(
-                        icon: isSpeaking
-                            ? Icons.stop_circle_outlined
-                            : Icons.volume_up_outlined,
-                        tooltip: isSpeaking ? 'Stop reading' : 'Read aloud',
+                        icon: isPaused
+                            ? Icons.play_circle_outlined
+                            : isSpeaking
+                                ? Icons.pause_circle_outlined
+                                : Icons.volume_up_outlined,
+                        tooltip: isPaused
+                            ? 'Resume reading'
+                            : isSpeaking
+                                ? 'Pause reading'
+                                : 'Read aloud',
                         onPressed: onReadAloud!,
+                        color: isUser
+                            ? colorScheme.onPrimaryContainer
+                            : colorScheme.onSecondaryContainer,
+                      ),
+                    if (onStopReadAloud != null)
+                      _ActionIcon(
+                        icon: Icons.stop_circle_outlined,
+                        tooltip: 'Stop reading',
+                        onPressed: onStopReadAloud!,
                         color: isUser
                             ? colorScheme.onPrimaryContainer
                             : colorScheme.onSecondaryContainer,

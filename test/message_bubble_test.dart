@@ -22,8 +22,7 @@ void main() {
 
   setUp(() async {
     final dir = await Directory.systemTemp.createTemp('message_bubble_test');
-    imageFile = File('${dir.path}/img-1.png')
-      ..writeAsBytesSync(_tinyPngBytes);
+    imageFile = File('${dir.path}/img-1.png')..writeAsBytesSync(_tinyPngBytes);
   });
 
   tearDown(() async {
@@ -91,7 +90,8 @@ void main() {
     expect(find.text('just text', findRichText: true), findsOneWidget);
   });
 
-  testWidgets('renders no Text widget for an image-only message (empty content)',
+  testWidgets(
+      'renders no Text widget for an image-only message (empty content)',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -171,6 +171,33 @@ void main() {
 
     expect(find.text('**stars**', findRichText: true), findsNothing);
     expect(find.textContaining('stars', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('read-aloud shows pause while speaking and play while paused',
+      (tester) async {
+    Widget bubble({required bool speaking, required bool paused}) {
+      return MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            content: 'hello',
+            isUser: false,
+            isStreaming: false,
+            onReadAloud: () {},
+            onStopReadAloud: () {},
+            isSpeaking: speaking,
+            isPaused: paused,
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(bubble(speaking: true, paused: false));
+    expect(find.byIcon(Icons.pause_circle_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.stop_circle_outlined), findsOneWidget);
+
+    await tester.pumpWidget(bubble(speaking: false, paused: true));
+    expect(find.byIcon(Icons.play_circle_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.stop_circle_outlined), findsOneWidget);
   });
 
   test('reply stats label uses model-call speed and the whole wait', () {

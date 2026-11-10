@@ -9,8 +9,10 @@ import '../../../core/engine/inference_backend.dart';
 import '../../../core/providers/download_provider.dart';
 import '../../../core/providers/inference_provider.dart';
 import '../../../core/providers/tts_provider.dart';
+import '../../../core/services/tts_service.dart';
 import '../../agent/agent_model_support.dart';
 import '../../models/domain/model.dart';
+import '../../settings/presentation/settings_notifier.dart';
 import '../application/conversation_markdown_exporter.dart';
 import '../data/conversation_repository.dart';
 import '../domain/conversation.dart';
@@ -66,8 +68,7 @@ class ConversationScreen extends ConsumerStatefulWidget {
   final String conversationId;
 
   @override
-  ConsumerState<ConversationScreen> createState() =>
-      _ConversationScreenState();
+  ConsumerState<ConversationScreen> createState() => _ConversationScreenState();
 }
 
 class _ConversationScreenState extends ConsumerState<ConversationScreen> {
@@ -76,6 +77,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   /// Message id currently being read aloud, if any.
   String? _speakingMessageId;
+
+  /// True after pause, until resume, stop, or a different message.
+  bool _readAloudPaused = false;
+
+  /// Read in initState. [dispose] cannot use `ref`.
+  late final TtsService _tts;
 
   /// Path to an image attached to the message being composed, if any. Copied
   /// into app storage so it survives independently of the picker's temp file.
@@ -86,11 +93,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     super.initState();
     _textController = TextEditingController();
     _scrollController = ScrollController();
+    _tts = ref.read(ttsServiceProvider);
   }
 
   @override
   void dispose() {
-    ref.read(ttsServiceProvider).stop();
+    _tts.stop();
     _textController.dispose();
     _scrollController.dispose();
     if (_attachedImagePath != null) {
@@ -209,9 +217,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   void _editSystemPrompt() {
-    final conversation = ref
-        .read(conversationRepositoryProvider)
-        .getById(widget.conversationId);
+    final conversation =
+        ref.read(conversationRepositoryProvider).getById(widget.conversationId);
     if (conversation == null) return;
 
     final controller = TextEditingController(text: conversation.systemPrompt);
@@ -297,21 +304,50 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
+  Future<void> _stopReadAloud() async {
+    setState(() {
+      _speakingMessageId = null;
+      _readAloudPaused = false;
+    });
+    await _tts.stop();
+  }
+
   Future<void> _toggleReadAloud(Message message) async {
-    final tts = ref.read(ttsServiceProvider);
+    final tts = _tts;
     if (!tts.isSupported) {
       _showSnack('Read aloud is available on Android');
       return;
     }
-    if (_speakingMessageId == message.id) {
-      await tts.stop();
-      setState(() => _speakingMessageId = null);
+    final rate = ref.read(settingsNotifierProvider).speechRate;
+    final same = _speakingMessageId == message.id;
+    if (same && !_readAloudPaused) {
+      // Set this before pause returns. Pause completes the in-flight speak,
+      // and that completion must not clear the button.
+      setState(() => _readAloudPaused = true);
+      final paused = await tts.pause();
+      if (!mounted) return;
+      if (!paused) {
+        setState(() {
+          _speakingMessageId = null;
+          _readAloudPaused = false;
+        });
+      }
       return;
     }
-    await tts.stop();
-    setState(() => _speakingMessageId = message.id);
-    await tts.speak(message.content);
-    if (mounted && _speakingMessageId == message.id) {
+    if (same && _readAloudPaused) {
+      setState(() => _readAloudPaused = false);
+      await tts.resume(rate: rate);
+      if (mounted && _speakingMessageId == message.id && !_readAloudPaused) {
+        setState(() => _speakingMessageId = null);
+      }
+      return;
+    }
+    setState(() {
+      _speakingMessageId = message.id;
+      _readAloudPaused = false;
+    });
+    await tts.speak(message.content, rate: rate);
+    if (mounted && _speakingMessageId == message.id && !_readAloudPaused) {
       setState(() => _speakingMessageId = null);
     }
   }
@@ -325,12 +361,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         .getById(widget.conversationId);
     final conversations =
         ref.watch(conversationListNotifierProvider).valueOrNull ?? [];
-    final currentConv = conversations
-        .where((c) => c.id == widget.conversationId)
-        .firstOrNull;
+    final currentConv =
+        conversations.where((c) => c.id == widget.conversationId).firstOrNull;
     final isRagEnabled = currentConv?.ragEnabled ?? false;
     final isToolsEnabled = currentConv?.toolsEnabled ?? false;
-    final loadedModel = ref.watch(inferenceNotifierProvider.notifier).loadedModel;
+    final loadedModel =
+        ref.watch(inferenceNotifierProvider.notifier).loadedModel;
     final agentCapable = isAgentCapableModel(loadedModel?.id);
     // Catalog data (isMultimodalModel) only says the model *should* support
     // vision; backend.supportsVision is the native-verified layer (the mmproj
@@ -418,9 +454,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           IconButton(
             icon: Icon(
               isRagEnabled ? Icons.auto_awesome : Icons.auto_awesome_outlined,
-              color: isRagEnabled
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
+              color:
+                  isRagEnabled ? Theme.of(context).colorScheme.primary : null,
             ),
             tooltip: isRagEnabled
                 ? 'RAG mode on — tap to disable'
@@ -551,7 +586,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                       onReadAloud: msg.role == MessageRole.assistant
                           ? () => _toggleReadAloud(msg)
                           : null,
-                      isSpeaking: _speakingMessageId == msg.id,
+                      onStopReadAloud:
+                          _speakingMessageId == msg.id ? _stopReadAloud : null,
+                      isSpeaking:
+                          _speakingMessageId == msg.id && !_readAloudPaused,
+                      isPaused:
+                          _speakingMessageId == msg.id && _readAloudPaused,
                       speedLabel: stats?.speed,
                       timeLabel: stats?.time,
                     );
@@ -570,7 +610,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 for (final entry in const [
                   ('Translate', 'Translate the following to English:\n'),
                   ('Refine', 'Refine and improve the following text:\n'),
-                  ('Summarize', 'Summarize the following in 3 bullet points:\n'),
+                  (
+                    'Summarize',
+                    'Summarize the following in 3 bullet points:\n'
+                  ),
                   ('Explain', 'Explain the following in simple terms:\n'),
                 ])
                   Padding(
@@ -664,8 +707,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                         icon: const Icon(Icons.stop),
                         tooltip: 'Stop generating',
                         onPressed: () {
-                          ref.read(ttsServiceProvider).stop();
-                          setState(() => _speakingMessageId = null);
+                          _stopReadAloud();
                           ref
                               .read(chatNotifierProvider(widget.conversationId)
                                   .notifier)

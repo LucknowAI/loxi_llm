@@ -12,11 +12,15 @@ part 'settings_notifier.g.dart';
 class SettingsNotifier extends _$SettingsNotifier {
   static const _keyChunkSize = 'settings_chunk_size';
   static const _keyTopK = 'settings_top_k';
+  static const _keySpeechRate = 'settings_speech_rate';
   static const _keyModelIoLogging = 'settings_model_io_logging';
   // Persists which tools the user turned OFF (opt-out), not which are on, so
   // a tool added to the catalog after a user's last save defaults to enabled
   // instead of silently disappearing (#67).
   static const _keyDisabledTools = 'settings_disabled_tools';
+
+  /// flutter_tts accepts 0.0–1.0. Keep the slider off the silent end.
+  static double _speechRate(double value) => value.clamp(0.25, 1.0);
 
   Set<String> _loadEnabledTools(SharedPreferences prefs) {
     final raw = prefs.getString(_keyDisabledTools);
@@ -35,6 +39,7 @@ class SettingsNotifier extends _$SettingsNotifier {
     return AppSettings(
       chunkSize: prefs.getInt(_keyChunkSize) ?? 300,
       topK: prefs.getInt(_keyTopK) ?? 3,
+      speechRate: _speechRate(prefs.getDouble(_keySpeechRate) ?? 0.5),
       modelIoLoggingEnabled: modelIoLoggingEnabled,
       enabledToolNames: _loadEnabledTools(prefs),
     );
@@ -47,6 +52,13 @@ class SettingsNotifier extends _$SettingsNotifier {
 
   void setTopK(int value) {
     ref.read(sharedPreferencesProvider).setInt(_keyTopK, value);
+    ref.invalidateSelf();
+  }
+
+  void setSpeechRate(double value) {
+    ref
+        .read(sharedPreferencesProvider)
+        .setDouble(_keySpeechRate, _speechRate(value));
     ref.invalidateSelf();
   }
 

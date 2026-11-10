@@ -45,6 +45,19 @@ class SettingsScreen extends ConsumerWidget {
             label: settings.topK.toString(),
             onChanged: (v) => notifier.setTopK(v.round()),
           ),
+          const SizedBox(height: 16),
+          Text(
+            'Read-aloud speed: ${_speechRateLabel(settings.speechRate)}',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          Slider(
+            value: settings.speechRate,
+            min: 0.25,
+            max: 1.0,
+            divisions: 15,
+            label: _speechRateLabel(settings.speechRate),
+            onChanged: notifier.setSpeechRate,
+          ),
           const Divider(height: 32),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -129,3 +142,5 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 }
+
+String _speechRateLabel(double rate) => '${(rate / 0.5).toStringAsFixed(1)}×';
