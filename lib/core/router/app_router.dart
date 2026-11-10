@@ -7,6 +7,7 @@ import '../../features/chat/presentation/conversation_screen.dart';
 import '../../features/documents/presentation/documents_screen.dart';
 import '../../features/models/presentation/models_screen.dart';
 import '../../features/onboarding/presentation/onboarding_screen.dart';
+import '../../features/settings/presentation/generation_settings_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../logging/log_viewer_screen.dart';
 import '../logging/model_io_log_screen.dart';
@@ -29,6 +30,10 @@ GoRouter appRouter(Ref ref) {
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/generation',
+        builder: (context, state) => const GenerationSettingsScreen(),
       ),
       GoRoute(
         path: '/logs',
@@ -59,8 +64,7 @@ GoRouter appRouter(Ref ref) {
                   GoRoute(
                     path: ':conversationId',
                     builder: (context, state) => ConversationScreen(
-                      conversationId:
-                          state.pathParameters['conversationId']!,
+                      conversationId: state.pathParameters['conversationId']!,
                     ),
                   ),
                 ],
