@@ -69,6 +69,15 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => context.push('/generation'),
           ),
           const Divider(height: 32),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.bookmarks_outlined),
+            title: const Text('Prompts'),
+            subtitle: const Text('Saved system prompts'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/prompts'),
+          ),
+          const Divider(height: 32),
           Text(
             'Agent tools',
             style: Theme.of(context).textTheme.titleMedium,

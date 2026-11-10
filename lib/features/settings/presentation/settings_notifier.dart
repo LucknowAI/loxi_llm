@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/logging/model_io_logger.dart';
@@ -18,6 +20,7 @@ class SettingsNotifier extends _$SettingsNotifier {
   // a tool added to the catalog after a user's last save defaults to enabled
   // instead of silently disappearing (#67).
   static const _keyDisabledTools = 'settings_disabled_tools';
+  static const _keyPrompts = 'settings_prompt_library';
 
   /// flutter_tts accepts 0.0–1.0. Keep the slider off the silent end.
   static double _speechRate(double value) => value.clamp(0.25, 1.0);
@@ -117,4 +120,61 @@ class SettingsNotifier extends _$SettingsNotifier {
     prefs.setInt(_genKey(modelId, 'batch'), saved.batchSize);
     ref.invalidateSelf();
   }
+
+  /// Named system prompts. Editing one does not change chats that already
+  /// copied it.
+  List<SavedPrompt> savedPrompts() {
+    final raw = ref.read(sharedPreferencesProvider).getString(_keyPrompts);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return [
+        for (final item in decoded)
+          if (item is Map && item['name'] is String && item['body'] is String)
+            SavedPrompt(
+              name: item['name'] as String,
+              body: item['body'] as String,
+            ),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Saves [body] under [name]. The same name replaces the previous text.
+  void savePrompt(String name, String body) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    _writePrompts([
+      for (final prompt in savedPrompts())
+        if (prompt.name != trimmed) prompt,
+      SavedPrompt(name: trimmed, body: body),
+    ]);
+  }
+
+  void deletePrompt(String name) {
+    _writePrompts([
+      for (final prompt in savedPrompts())
+        if (prompt.name != name) prompt,
+    ]);
+  }
+
+  void _writePrompts(List<SavedPrompt> prompts) {
+    ref.read(sharedPreferencesProvider).setString(
+          _keyPrompts,
+          jsonEncode([
+            for (final prompt in prompts)
+              {'name': prompt.name, 'body': prompt.body},
+          ]),
+        );
+    ref.invalidateSelf();
+  }
+}
+
+class SavedPrompt {
+  const SavedPrompt({required this.name, required this.body});
+
+  final String name;
+  final String body;
 }
