@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Per-model generation settings. Temperature, reply length, top-k, top-p, and repeat penalty apply on the next reply. Threads, context size, and batch size apply the next time that model is loaded ([#110](https://github.com/LucknowAI/loki_llm/issues/110))
 - LFM3 1.7B added to the model catalog for text chat, with thinking off and agent tools disabled. Bumped the vendored `llama.cpp` submodule to upstream build b11960 (`8642541b2`), which adds the `lfm3` architecture ([#95](https://github.com/LucknowAI/loki_llm/issues/95))
 - Finished replies show the model speed and how long the turn took, on the same row as copy and read-aloud ([#99](https://github.com/LucknowAI/loki_llm/issues/99))
 - Agent tool: `model_info` — reports the loaded model, backend, context size, agent capability, and per-chat RAG flag ([#16](https://github.com/LucknowAI/loxi_llm/issues/16))

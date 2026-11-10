@@ -6,13 +6,16 @@ import 'inference_backend.dart';
 /// [LlamaEngine.instance] is a singleton — only one GGUF model can be loaded at
 /// a time. [unloadModel] must be called before loading a new model.
 final class LlamaCppBackend extends InferenceBackend {
-  /// [temperature] defaults to the app-wide value; a model family with its
-  /// own recommended temperature gets it from [backendForModel].
-  LlamaCppBackend({this.temperature = 0.7});
-
-  final double temperature;
-
   final _llama = LlamaEngine.instance;
+
+  int _nThreads = 4;
+  int _contextSize = 2048;
+  int _batchSize = 512;
+  int _maxTokens = 512;
+  double _temperature = 0.7;
+  int _topK = 40;
+  double _topP = 0.95;
+  double _repeatPenalty = 1.1;
 
   @override
   bool get isLoaded => _llama.isModelLoaded;
@@ -28,13 +31,22 @@ final class LlamaCppBackend extends InferenceBackend {
   Future<String> mediaMarker() => _llama.mediaMarker();
 
   @override
-  Future<void> loadModel(String path, {String? mmprojPath}) async {
+  Future<void> loadModel(
+    String path, {
+    String? mmprojPath,
+    int nThreads = 4,
+    int contextSize = 2048,
+    int batchSize = 512,
+  }) async {
+    _nThreads = nThreads;
+    _contextSize = contextSize;
+    _batchSize = batchSize;
     final success = await _llama.loadModel(
       LlamaConfig(
         modelPath: path,
-        nThreads: 4,
-        contextSize: 2048,
-        batchSize: 512,
+        nThreads: nThreads,
+        contextSize: contextSize,
+        batchSize: batchSize,
         mmprojPath: mmprojPath,
       ),
     );
@@ -53,20 +65,16 @@ final class LlamaCppBackend extends InferenceBackend {
     }
   }
 
-  // Generation tuning — single source of truth so [generationParams] always
-  // matches what [generate] actually uses. topP/topK/repeatPenalty fall back to
-  // GenerationParams defaults (0.95 / 40 / 1.1).
-  static const int _maxTokens = 512;
-
   @override
   Map<String, Object?> get generationParams => {
         'maxTokens': _maxTokens,
-        'temperature': temperature,
-        'topP': 0.95,
-        'topK': 40,
-        'repeatPenalty': 1.1,
-        'contextSize': 2048,
-        'batchSize': 512,
+        'temperature': _temperature,
+        'topP': _topP,
+        'topK': _topK,
+        'repeatPenalty': _repeatPenalty,
+        'contextSize': _contextSize,
+        'batchSize': _batchSize,
+        'nThreads': _nThreads,
       };
 
   @override
@@ -75,12 +83,25 @@ final class LlamaCppBackend extends InferenceBackend {
     List<String> stopSequences = const [],
     String? grammar,
     List<String> imagePaths = const [],
+    int maxTokens = 512,
+    double temperature = 0.7,
+    int topK = 40,
+    double topP = 0.95,
+    double repeatPenalty = 1.1,
   }) {
+    _maxTokens = maxTokens;
+    _temperature = temperature;
+    _topK = topK;
+    _topP = topP;
+    _repeatPenalty = repeatPenalty;
     return _llama.generateStream(
       GenerationParams(
         prompt: prompt,
-        maxTokens: _maxTokens,
+        maxTokens: maxTokens,
         temperature: temperature,
+        topK: topK,
+        topP: topP,
+        repeatPenalty: repeatPenalty,
         stopSequences: stopSequences,
         grammar: grammar,
         imagePaths: imagePaths,

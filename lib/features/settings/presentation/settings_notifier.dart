@@ -4,6 +4,7 @@ import '../../../core/logging/model_io_logger.dart';
 import '../../../core/providers/shared_preferences_provider.dart';
 import '../../agent/agent_tool_catalog.dart';
 import '../domain/app_settings.dart';
+import '../domain/generation_settings.dart';
 
 part 'settings_notifier.g.dart';
 
@@ -66,6 +67,42 @@ class SettingsNotifier extends _$SettingsNotifier {
       disabled.add(toolName);
     }
     prefs.setString(_keyDisabledTools, disabled.join(','));
+    ref.invalidateSelf();
+  }
+
+  static String _genKey(String modelId, String name) => 'gen_${modelId}_$name';
+
+  /// Saved settings for [modelId], or that model's defaults when unset.
+  GenerationSettings generationFor(String modelId) {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final defaults = GenerationSettings.defaultsFor(modelId);
+    return GenerationSettings(
+      temperature: prefs.getDouble(_genKey(modelId, 'temperature')) ??
+          defaults.temperature,
+      maxTokens:
+          prefs.getInt(_genKey(modelId, 'max_tokens')) ?? defaults.maxTokens,
+      topK: prefs.getInt(_genKey(modelId, 'top_k')) ?? defaults.topK,
+      topP: prefs.getDouble(_genKey(modelId, 'top_p')) ?? defaults.topP,
+      repeatPenalty:
+          prefs.getDouble(_genKey(modelId, 'repeat')) ?? defaults.repeatPenalty,
+      nThreads: prefs.getInt(_genKey(modelId, 'threads')) ?? defaults.nThreads,
+      contextSize:
+          prefs.getInt(_genKey(modelId, 'context')) ?? defaults.contextSize,
+      batchSize: prefs.getInt(_genKey(modelId, 'batch')) ?? defaults.batchSize,
+    ).clamped();
+  }
+
+  void saveGeneration(String modelId, GenerationSettings settings) {
+    final saved = settings.clamped();
+    final prefs = ref.read(sharedPreferencesProvider);
+    prefs.setDouble(_genKey(modelId, 'temperature'), saved.temperature);
+    prefs.setInt(_genKey(modelId, 'max_tokens'), saved.maxTokens);
+    prefs.setInt(_genKey(modelId, 'top_k'), saved.topK);
+    prefs.setDouble(_genKey(modelId, 'top_p'), saved.topP);
+    prefs.setDouble(_genKey(modelId, 'repeat'), saved.repeatPenalty);
+    prefs.setInt(_genKey(modelId, 'threads'), saved.nThreads);
+    prefs.setInt(_genKey(modelId, 'context'), saved.contextSize);
+    prefs.setInt(_genKey(modelId, 'batch'), saved.batchSize);
     ref.invalidateSelf();
   }
 }
